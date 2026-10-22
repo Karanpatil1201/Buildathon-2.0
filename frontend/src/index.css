@@ -1,0 +1,222 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    /* Sky Vivid Dark Charcoal Palette */
+    --bg-canvas: #131314;
+    --surface-main: #1E1F20;
+    --surface-card: #202124;
+    --surface-secondary: #303134;
+    --surface-hover: #35373A;
+    --surface-active: #3C4043;
+    
+    /* Thin Neutral Borders */
+    --border-neutral: #3C4043;
+    --border-subtle: #2C2F33;
+    --border-highlight: #5F6368;
+    
+    /* Primary Sky Blue */
+    --primary-blue: #A8C7FA;
+    --primary-blue-hover: #C2E7FF;
+    --on-primary-blue: #041E49;
+    --primary-blue-container: #004A77;
+    --on-primary-blue-container: #C2E7FF;
+    
+    /* Semantic Colors */
+    --coral-destructive: #F28B82;
+    --on-coral: #601410;
+    --coral-container: rgba(242, 139, 130, 0.15);
+    
+    --mint-success: #81C995;
+    --on-mint: #00391A;
+    --mint-container: rgba(129, 201, 149, 0.15);
+    
+    --amber-warning: #FDD663;
+    --on-amber: #3F2E00;
+    --amber-container: rgba(253, 214, 99, 0.15);
+    
+    /* Text Hierarchy */
+    --text-primary: #E3E3E3;
+    --text-secondary: #C4C7C5;
+    --text-muted: #8E918F;
+    --text-disabled: #5F6368;
+    
+    /* Geometry & Shadows */
+    --radius-sm: 8px;
+    --radius-md: 10px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --shadow-restrained: 0 1px 3px 0 rgba(0, 0, 0, 0.35);
+    --shadow-modal: 0 16px 36px 0 rgba(0, 0, 0, 0.55);
+  }
+
+  body {
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.65;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    line-height: 1.25;
+    letter-spacing: -0.015em;
+    color: #FFFFFF;
+  }
+
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', ui-monospace, Menlo, Monaco, Consolas, monospace;
+  }
+
+  #root {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    max-width: 100% !important;
+    width: 100% !important;
+    border: none !important;
+    text-align: left !important;
+    background-color: var(--bg-canvas);
+  }
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #131314;
+}
+::-webkit-scrollbar-thumb {
+  background: #303134;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3C4043;
+}
+
+/* Sky Vivid Main Surfaces (formerly .industrial-card) */
+.industrial-card, .sky-card {
+  background-color: #1E1F20;
+  border: 1px solid #3C4043;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.25);
+  transition: border-color 0.15s ease-in-out, background-color 0.15s ease-in-out;
+}
+.industrial-card:hover, .sky-card:hover {
+  border-color: #5F6368;
+}
+
+.industrial-card-active, .sky-card-active {
+  border-color: #A8C7FA !important;
+  background-color: rgba(40, 59, 89, 0.25) !important;
+}
+
+/* Secondary & Sub Surface */
+.sky-card-sub {
+  background-color: #202124;
+  border: 1px solid #3C4043;
+  border-radius: 10px;
+}
+
+.sky-card-secondary {
+  background-color: #303134;
+  border: 1px solid #3C4043;
+  border-radius: 10px;
+}
+
+/* Modals & Dropdown Elevation */
+.industrial-modal-shadow, .sky-modal-shadow {
+  box-shadow: 0 16px 36px 0 rgba(0, 0, 0, 0.55);
+}
+
+/* Sky Vivid Action Buttons */
+.btn-primary-blue {
+  background-color: #A8C7FA;
+  color: #041E49;
+  font-weight: 600;
+  border-radius: 12px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.25rem;
+  font-size: 0.75rem;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+  cursor: pointer;
+}
+.btn-primary-blue:hover {
+  background-color: #C2E7FF;
+}
+.btn-primary-blue:active {
+  background-color: #8AB4F8;
+}
+
+.btn-secondary-charcoal {
+  background-color: #303134;
+  color: #E3E3E3;
+  border: 1px solid #3C4043;
+  font-weight: 500;
+  border-radius: 12px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.25rem;
+  font-size: 0.75rem;
+  transition: all 0.15s ease;
+  cursor: pointer;
+}
+.btn-secondary-charcoal:hover {
+  background-color: #3C4043;
+  border-color: #5F6368;
+  color: #FFFFFF;
+}
+
+.btn-coral-destructive {
+  background-color: #F28B82;
+  color: #601410;
+  font-weight: 600;
+  border-radius: 12px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.25rem;
+  font-size: 0.75rem;
+  transition: background-color 0.15s ease;
+  cursor: pointer;
+}
+.btn-coral-destructive:hover {
+  background-color: #F6AEA9;
+}
+
+/* Status Badges */
+.badge-passed {
+  background-color: rgba(129, 201, 149, 0.15);
+  color: #81C995;
+  border: 1px solid rgba(129, 201, 149, 0.35);
+}
+.badge-defective {
+  background-color: rgba(242, 139, 130, 0.15);
+  color: #F28B82;
+  border: 1px solid rgba(242, 139, 130, 0.35);
+}
+.badge-hold {
+  background-color: rgba(253, 214, 99, 0.15);
+  color: #FDD663;
+  border: 1px solid rgba(253, 214, 99, 0.35);
+}
+.badge-review {
+  background-color: rgba(168, 199, 250, 0.15);
+  color: #A8C7FA;
+  border: 1px solid rgba(168, 199, 250, 0.35);
+}
