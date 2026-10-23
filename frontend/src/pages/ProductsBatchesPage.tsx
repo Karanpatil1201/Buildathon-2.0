@@ -3,6 +3,7 @@ import { Layers, Plus, History, AlertCircle, CheckCircle } from 'lucide-react';
 import { Product, Batch, BatchDecision, User } from '../types';
 import { api } from '../api/client';
 import { StatusBadge } from '../components/Badge';
+import { canManageBatches } from '../utils/rbac';
 
 interface ProductsBatchesPageProps {
   currentUser: User | null;
@@ -12,7 +13,7 @@ interface ProductsBatchesPageProps {
 export const ProductsBatchesPage: React.FC<ProductsBatchesPageProps> = ({ currentUser, onRefreshMetrics }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [_loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -106,18 +107,24 @@ export const ProductsBatchesPage: React.FC<ProductsBatchesPageProps> = ({ curren
     }
   };
 
-  const isQualityManagerOrAdmin = currentUser?.role === 'quality_manager' || currentUser?.role === 'admin';
+  const canAuthorize = canManageBatches(currentUser);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-            <Layers className="w-5 h-5 text-[#A8C7FA]" />
-            Products & Batches Registry
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="font-mono text-[10px] font-semibold px-2 py-0.5 rounded bg-[rgba(113,132,91,0.12)] text-[#5E704B] border border-[#71845B]/30 tracking-wide">
+              BATCH GOVERNANCE // LOT TRACEABILITY
+            </span>
+            <span className="text-xs text-[#77766E] font-sans">Quarantine & Release Authorizations</span>
+          </div>
+          <h1 className="type-page-title flex items-center gap-2.5">
+            <Layers className="w-6 h-6 text-[#71845B] shrink-0" />
+            Products & Production Batches Registry
           </h1>
-          <p className="text-xs text-[#9AA0A6] mt-1">
+          <p className="text-xs sm:text-sm text-[#77766E] mt-1 font-sans leading-relaxed">
             Maintain product catalog and manage batch-level quality quarantine and release authorizations.
           </p>
         </div>
@@ -125,14 +132,14 @@ export const ProductsBatchesPage: React.FC<ProductsBatchesPageProps> = ({ curren
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowProductModal(true)}
-            className="flex items-center gap-1.5 bg-[#303134] hover:bg-[#3C4043] border border-[#3C4043] text-[#E3E3E3] text-xs font-semibold px-3.5 py-2.5 rounded-xl cursor-pointer transition-colors"
+            className="btn-secondary-ivory font-sans text-xs font-semibold"
           >
-            <Plus className="w-3.5 h-3.5 text-[#A8C7FA]" />
+            <Plus className="w-3.5 h-3.5 text-[#71845B]" />
             <span>Add Product</span>
           </button>
           <button
             onClick={() => setShowBatchModal(true)}
-            className="flex items-center gap-1.5 bg-[#A8C7FA] hover:bg-[#C2E7FF] text-[#041E49] text-xs font-bold px-4 py-2.5 rounded-xl cursor-pointer transition-colors shadow-sm"
+            className="btn-primary-sage font-sans text-xs font-semibold"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Register Batch</span>
@@ -142,32 +149,32 @@ export const ProductsBatchesPage: React.FC<ProductsBatchesPageProps> = ({ curren
 
       {/* Notifications */}
       {error && (
-        <div className="p-3 bg-[#F28B82]/10 border border-[#F28B82]/40 rounded-xl text-[#F28B82] text-xs flex items-center justify-between">
+        <div className="p-3.5 bg-[rgba(201,121,88,0.12)] border border-[#C97958]/40 rounded-xl text-[#C97958] text-xs font-sans flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-[#F28B82] shrink-0" />
+            <AlertCircle className="w-4 h-4 text-[#C97958] shrink-0" />
             <span>{error}</span>
           </div>
-          <button onClick={() => setError(null)} className="text-[#F28B82] hover:opacity-80">✕</button>
+          <button onClick={() => setError(null)} className="text-[#C97958] hover:opacity-80 font-bold cursor-pointer">✕</button>
         </div>
       )}
       {successMsg && (
-        <div className="p-3 bg-[#81C995]/10 border border-[#81C995]/40 rounded-xl text-[#81C995] text-xs flex items-center justify-between">
+        <div className="p-3.5 bg-[rgba(113,132,91,0.12)] border border-[#71845B]/40 rounded-xl text-[#5E704B] text-xs font-sans flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <CheckCircle className="w-4 h-4 text-[#81C995] shrink-0" />
+            <CheckCircle className="w-4 h-4 text-[#71845B] shrink-0" />
             <span>{successMsg}</span>
           </div>
-          <button onClick={() => setSuccessMsg(null)} className="text-[#81C995] hover:opacity-80">✕</button>
+          <button onClick={() => setSuccessMsg(null)} className="text-[#71845B] hover:opacity-80 font-bold cursor-pointer">✕</button>
         </div>
       )}
 
       {/* Batches Table */}
-      <div className="sky-card p-5">
+      <div className="industrial-card p-5 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-sm font-bold text-white">Active Production Batches</h2>
-            <p className="text-xs text-[#9AA0A6]">Formal batch status is independent of individual item results</p>
+            <h2 className="text-sm font-semibold text-[#292A26] font-sans">Active Production Batches</h2>
+            <p className="text-xs text-[#77766E] font-sans">Formal batch status is independent of individual item results</p>
           </div>
-          <div className="text-xs font-mono text-[#9AA0A6]">
+          <div className="text-xs font-mono tabular-nums text-[#77766E]">
             {batches.length} registered batches
           </div>
         </div>
@@ -175,7 +182,7 @@ export const ProductsBatchesPage: React.FC<ProductsBatchesPageProps> = ({ curren
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
-              <tr className="border-b border-[#3C4043] text-[#9AA0A6] uppercase font-mono text-[11px]">
+              <tr className="border-b border-[#D8C9AE] text-[#77766E] uppercase font-sans text-[11px] font-semibold tracking-wider bg-[#F0EAE1]/60">
                 <th className="py-2.5 px-3">Batch Number</th>
                 <th className="py-2.5 px-3">Product</th>
                 <th className="py-2.5 px-3">Quantity</th>
@@ -186,49 +193,49 @@ export const ProductsBatchesPage: React.FC<ProductsBatchesPageProps> = ({ curren
                 <th className="py-2.5 px-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#3C4043]/50">
+            <tbody className="divide-y divide-[#D8C9AE]/50">
               {batches.map((b) => (
-                <tr key={b.id} className="hover:bg-[#282A2C] transition-colors">
-                  <td className="py-3 px-3 font-mono font-bold text-white">
+                <tr key={b.id} className="hover:bg-[#F0EAE1]/70 transition-colors">
+                  <td className="py-3 px-3 font-mono font-semibold text-xs text-[#292A26]">
                     {b.batch_number}
                   </td>
-                  <td className="py-3 px-3 text-[#E3E3E3]">
-                    <div className="font-semibold">{b.product_name}</div>
-                    <div className="text-[10px] font-mono text-[#9AA0A6]">{b.product_code}</div>
+                  <td className="py-3 px-3 text-[#292A26] font-sans">
+                    <div className="font-semibold text-xs sm:text-sm">{b.product_name}</div>
+                    <div className="text-xs font-mono text-[#77766E]">{b.product_code}</div>
                   </td>
-                  <td className="py-3 px-3 font-mono text-[#E3E3E3]">
+                  <td className="py-3 px-3 font-mono text-xs tabular-nums text-[#292A26]">
                     {b.quantity} units
                   </td>
-                  <td className="py-3 px-3 font-mono text-[#E3E3E3]">
+                  <td className="py-3 px-3 font-mono text-xs tabular-nums text-[#292A26]">
                     {b.total_inspections} items
                   </td>
-                  <td className="py-3 px-3 font-mono">
-                    <span className={b.defect_count > 0 ? 'text-[#F28B82] font-bold' : 'text-[#9AA0A6]'}>
+                  <td className="py-3 px-3 font-mono text-xs tabular-nums">
+                    <span className={b.defect_count > 0 ? 'text-[#C97958] font-semibold' : 'text-[#77766E]'}>
                       {b.defect_count}
                     </span>
                   </td>
                   <td className="py-3 px-3">
                     <StatusBadge status={b.status} size="sm" />
                   </td>
-                  <td className="py-3 px-3 text-[#9AA0A6] max-w-xs truncate">
+                  <td className="py-3 px-3 text-[#77766E] font-sans max-w-xs truncate text-xs">
                     {b.decision_notes || 'Pending quality audit'}
                   </td>
                   <td className="py-3 px-3 text-right">
-                    <div className="flex items-center justify-end gap-2">
+                    <div className="flex items-center justify-end gap-2 font-sans">
                       <button
                         onClick={() => {
                           setSelectedBatch(b);
                           setDecisionForm({ new_status: b.status, reason: '' });
                           setShowDecisionModal(true);
                         }}
-                        className="px-2.5 py-1.5 rounded-lg bg-[#303134] hover:bg-[#3C4043] border border-[#3C4043] text-[#A8C7FA] text-xs font-semibold cursor-pointer transition-colors"
-                        title={isQualityManagerOrAdmin ? "Change batch status" : "Quality Manager role required"}
+                        className="px-2.5 py-1.5 rounded-lg bg-[#FFFCF6] hover:bg-[#F0EAE1] border border-[#D8C9AE] text-[#71845B] text-xs font-semibold cursor-pointer transition-colors"
+                        title={canAuthorize ? "Execute batch quality disposition" : "Quality Manager authority required (batch:quarantine / batch:release)"}
                       >
                         Disposition
                       </button>
                       <button
                         onClick={() => handleOpenHistory(b)}
-                        className="p-1.5 rounded-lg text-[#9AA0A6] hover:text-white hover:bg-[#303134] cursor-pointer transition-colors"
+                        className="p-1.5 rounded-lg text-[#77766E] hover:text-[#292A26] hover:bg-[#F0EAE1] cursor-pointer transition-colors"
                         title="View decision history"
                       >
                         <History className="w-4 h-4" />
@@ -243,19 +250,19 @@ export const ProductsBatchesPage: React.FC<ProductsBatchesPageProps> = ({ curren
       </div>
 
       {/* Products Catalog Card */}
-      <div className="sky-card p-5">
-        <h2 className="text-sm font-bold text-white mb-1">Product Family Catalog</h2>
-        <p className="text-xs text-[#9AA0A6] mb-4">Inspected component models and metallurgy classes</p>
+      <div className="industrial-card p-5 shadow-sm">
+        <h2 className="text-sm font-semibold text-[#292A26] font-sans mb-1">Product Family Catalog</h2>
+        <p className="text-xs text-[#77766E] font-sans mb-4">Inspected component models and metallurgy classes</p>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {products.map((p) => (
-            <div key={p.id} className="p-3.5 bg-[#202124] border border-[#3C4043] rounded-xl">
+            <div key={p.id} className="p-3.5 bg-[#F0EAE1] border border-[#D8C9AE] rounded-xl font-sans">
               <div className="flex items-center justify-between mb-1">
-                <span className="font-mono text-xs font-bold text-[#A8C7FA]">{p.code}</span>
-                <span className="text-[10px] text-[#9AA0A6] font-mono">{p.category}</span>
+                <span className="font-mono text-xs font-semibold text-[#71845B]">{p.code}</span>
+                <span className="text-xs text-[#77766E]">{p.category}</span>
               </div>
-              <h3 className="text-xs font-bold text-white">{p.name}</h3>
-              <p className="text-[11px] text-[#9AA0A6] mt-1 line-clamp-2">{p.description || 'No description provided.'}</p>
+              <h3 className="text-xs sm:text-sm font-semibold text-[#292A26]">{p.name}</h3>
+              <p className="text-xs text-[#77766E] mt-1 line-clamp-2 leading-relaxed">{p.description || 'No description provided.'}</p>
             </div>
           ))}
         </div>
@@ -263,63 +270,63 @@ export const ProductsBatchesPage: React.FC<ProductsBatchesPageProps> = ({ curren
 
       {/* Modal: Register Product */}
       {showProductModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="sky-card industrial-modal-shadow w-full max-w-md p-6 bg-[#202124] border border-[#3C4043] rounded-2xl">
-            <h3 className="text-base font-bold text-white mb-1">Add New Product Family</h3>
-            <p className="text-xs text-[#9AA0A6] mb-4">Define a component identifier for quality tracking</p>
+        <div className="fixed inset-0 bg-[#292A26]/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="industrial-card industrial-modal-shadow w-full max-w-md p-6 bg-[#FFFCF6] border border-[#D8C9AE] rounded-2xl">
+            <h3 className="text-base font-bold text-[#292A26] mb-1">Add New Product Family</h3>
+            <p className="text-xs text-[#77766E] mb-4">Define a component identifier for quality tracking</p>
             <form onSubmit={handleCreateProduct} className="space-y-3">
               <div>
-                <label className="text-xs text-[#E3E3E3] font-semibold block mb-1">Product Code</label>
+                <label className="text-xs text-[#292A26] font-semibold block mb-1">Product Code</label>
                 <input
                   type="text"
                   required
                   placeholder="e.g. CAST-ROTOR-04"
                   value={newProduct.code}
                   onChange={e => setNewProduct({ ...newProduct, code: e.target.value })}
-                  className="w-full min-h-[44px] bg-[#1E1F20] border border-[#3C4043] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#A8C7FA] focus:ring-1 focus:ring-[#A8C7FA] font-mono"
+                  className="w-full min-h-[40px] bg-[#FFFCF6] border border-[#D8C9AE] rounded-xl px-3 py-2 text-xs text-[#292A26] focus:outline-none focus:border-[#71845B] font-mono"
                 />
               </div>
               <div>
-                <label className="text-xs text-[#E3E3E3] font-semibold block mb-1">Product Name</label>
+                <label className="text-xs text-[#292A26] font-semibold block mb-1">Product Name</label>
                 <input
                   type="text"
                   required
                   placeholder="e.g. Ductile Iron Turbine Housing"
                   value={newProduct.name}
                   onChange={e => setNewProduct({ ...newProduct, name: e.target.value })}
-                  className="w-full min-h-[44px] bg-[#1E1F20] border border-[#3C4043] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#A8C7FA] focus:ring-1 focus:ring-[#A8C7FA]"
+                  className="w-full min-h-[40px] bg-[#FFFCF6] border border-[#D8C9AE] rounded-xl px-3 py-2 text-xs text-[#292A26] focus:outline-none focus:border-[#71845B]"
                 />
               </div>
               <div>
-                <label className="text-xs text-[#E3E3E3] font-semibold block mb-1">Category / Metallurgy</label>
+                <label className="text-xs text-[#292A26] font-semibold block mb-1">Category / Metallurgy</label>
                 <input
                   type="text"
                   required
                   value={newProduct.category}
                   onChange={e => setNewProduct({ ...newProduct, category: e.target.value })}
-                  className="w-full min-h-[44px] bg-[#1E1F20] border border-[#3C4043] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#A8C7FA] focus:ring-1 focus:ring-[#A8C7FA]"
+                  className="w-full min-h-[40px] bg-[#FFFCF6] border border-[#D8C9AE] rounded-xl px-3 py-2 text-xs text-[#292A26] focus:outline-none focus:border-[#71845B]"
                 />
               </div>
               <div>
-                <label className="text-xs text-[#E3E3E3] font-semibold block mb-1">Description / Spec</label>
+                <label className="text-xs text-[#292A26] font-semibold block mb-1">Description / Spec</label>
                 <textarea
                   rows={2}
                   value={newProduct.description}
                   onChange={e => setNewProduct({ ...newProduct, description: e.target.value })}
-                  className="w-full bg-[#1E1F20] border border-[#3C4043] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#A8C7FA] focus:ring-1 focus:ring-[#A8C7FA]"
+                  className="w-full bg-[#FFFCF6] border border-[#D8C9AE] rounded-xl px-3 py-2 text-xs text-[#292A26] focus:outline-none focus:border-[#71845B]"
                 />
               </div>
-              <div className="flex justify-end gap-2 pt-4 border-t border-[#3C4043]">
+              <div className="flex justify-end gap-2 pt-4 border-t border-[#D8C9AE]">
                 <button
                   type="button"
                   onClick={() => setShowProductModal(false)}
-                  className="min-h-[44px] px-4 py-2 rounded-xl bg-[#303134] hover:bg-[#3C4043] border border-[#3C4043] text-[#E3E3E3] text-xs transition-colors cursor-pointer"
+                  className="btn-secondary-ivory text-xs"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="min-h-[44px] px-5 py-2 rounded-xl bg-[#A8C7FA] hover:bg-[#C2E7FF] text-[#041E49] text-xs font-bold transition-colors cursor-pointer"
+                  className="btn-primary-sage text-xs font-bold"
                 >
                   Save Product
                 </button>
@@ -331,56 +338,56 @@ export const ProductsBatchesPage: React.FC<ProductsBatchesPageProps> = ({ curren
 
       {/* Modal: Register Batch */}
       {showBatchModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="sky-card industrial-modal-shadow w-full max-w-md p-6 bg-[#202124] border border-[#3C4043] rounded-2xl">
-            <h3 className="text-base font-bold text-white mb-1">Register New Production Batch</h3>
-            <p className="text-xs text-[#9AA0A6] mb-4">Initialize tracking for a newly cast lot</p>
+        <div className="fixed inset-0 bg-[#292A26]/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="industrial-card industrial-modal-shadow w-full max-w-md p-6 bg-[#FFFCF6] border border-[#D8C9AE] rounded-2xl">
+            <h3 className="text-base font-bold text-[#292A26] mb-1">Register New Production Batch</h3>
+            <p className="text-xs text-[#77766E] mb-4">Initialize tracking for a newly cast lot</p>
             <form onSubmit={handleCreateBatch} className="space-y-3">
               <div>
-                <label className="text-xs text-[#E3E3E3] font-semibold block mb-1">Select Product</label>
+                <label className="text-xs text-[#292A26] font-semibold block mb-1">Select Product</label>
                 <select
                   value={newBatch.product_id}
                   onChange={e => setNewBatch({ ...newBatch, product_id: parseInt(e.target.value) })}
-                  className="w-full min-h-[44px] bg-[#1E1F20] border border-[#3C4043] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#A8C7FA] focus:ring-1 focus:ring-[#A8C7FA]"
+                  className="w-full min-h-[40px] bg-[#FFFCF6] border border-[#D8C9AE] rounded-xl px-3 py-2 text-xs text-[#292A26] focus:outline-none focus:border-[#71845B]"
                 >
                   {products.map(p => (
-                    <option key={p.id} value={p.id} className="bg-[#202124] text-white">{p.code} — {p.name}</option>
+                    <option key={p.id} value={p.id}>{p.code} — {p.name}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="text-xs text-[#E3E3E3] font-semibold block mb-1">Batch Number</label>
+                <label className="text-xs text-[#292A26] font-semibold block mb-1">Batch Number</label>
                 <input
                   type="text"
                   required
                   placeholder="e.g. B-2026-112"
                   value={newBatch.batch_number}
                   onChange={e => setNewBatch({ ...newBatch, batch_number: e.target.value })}
-                  className="w-full min-h-[44px] bg-[#1E1F20] border border-[#3C4043] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#A8C7FA] focus:ring-1 focus:ring-[#A8C7FA] font-mono"
+                  className="w-full min-h-[40px] bg-[#FFFCF6] border border-[#D8C9AE] rounded-xl px-3 py-2 text-xs text-[#292A26] focus:outline-none focus:border-[#71845B] font-mono"
                 />
               </div>
               <div>
-                <label className="text-xs text-[#E3E3E3] font-semibold block mb-1">Batch Size (Units)</label>
+                <label className="text-xs text-[#292A26] font-semibold block mb-1">Batch Size (Units)</label>
                 <input
                   type="number"
                   min={1}
                   required
                   value={newBatch.quantity}
                   onChange={e => setNewBatch({ ...newBatch, quantity: parseInt(e.target.value) || 0 })}
-                  className="w-full min-h-[44px] bg-[#1E1F20] border border-[#3C4043] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#A8C7FA] focus:ring-1 focus:ring-[#A8C7FA] font-mono"
+                  className="w-full min-h-[40px] bg-[#FFFCF6] border border-[#D8C9AE] rounded-xl px-3 py-2 text-xs text-[#292A26] focus:outline-none focus:border-[#71845B] font-mono"
                 />
               </div>
-              <div className="flex justify-end gap-2 pt-4 border-t border-[#3C4043]">
+              <div className="flex justify-end gap-2 pt-4 border-t border-[#D8C9AE]">
                 <button
                   type="button"
                   onClick={() => setShowBatchModal(false)}
-                  className="min-h-[44px] px-4 py-2 rounded-xl bg-[#303134] hover:bg-[#3C4043] border border-[#3C4043] text-[#E3E3E3] text-xs transition-colors cursor-pointer"
+                  className="btn-secondary-ivory text-xs"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="min-h-[44px] px-5 py-2 rounded-xl bg-[#A8C7FA] hover:bg-[#C2E7FF] text-[#041E49] text-xs font-bold transition-colors cursor-pointer"
+                  className="btn-primary-sage text-xs font-bold"
                 >
                   Create Batch
                 </button>
@@ -392,27 +399,27 @@ export const ProductsBatchesPage: React.FC<ProductsBatchesPageProps> = ({ curren
 
       {/* Modal: Batch Disposition (Hold / Release Decision) */}
       {showDecisionModal && selectedBatch && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="sky-card industrial-modal-shadow w-full max-w-lg p-6 bg-[#202124] border border-[#3C4043] rounded-2xl">
+        <div className="fixed inset-0 bg-[#292A26]/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="industrial-card industrial-modal-shadow w-full max-w-lg p-6 bg-[#FFFCF6] border border-[#D8C9AE] rounded-2xl">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-base font-bold text-white">Batch Quality Disposition</h3>
-              <span className="font-mono text-xs px-2 py-0.5 rounded-lg bg-[#004A77] text-[#C2E7FF] border border-[#A8C7FA]/40 font-bold">
+              <h3 className="text-base font-bold text-[#292A26]">Batch Quality Disposition</h3>
+              <span className="font-mono text-xs px-2 py-0.5 rounded-lg bg-[rgba(113,132,91,0.12)] text-[#5E704B] border border-[#71845B]/40 font-bold">
                 {selectedBatch.batch_number}
               </span>
             </div>
-            <p className="text-xs text-[#9AA0A6] mb-4">
-              Authorized release or hold quarantine decision. Requires Quality Manager or Administrator role.
+            <p className="text-xs text-[#77766E] mb-4">
+              Authorized release or hold quarantine decision. Requires Quality Manager authorization.
             </p>
 
-            {!isQualityManagerOrAdmin && (
-              <div className="p-3 bg-[#FDD663]/10 border border-[#FDD663]/40 rounded-xl text-[#FDD663] text-xs mb-4">
-                <strong>Authorization Notice</strong>: Your current role is <code>{currentUser?.role}</code>. Batch disposition requires Quality Manager or Administrator privileges. Switch to Elena Vance in the top navbar to execute this authorization.
+            {!canAuthorize && (
+              <div className="p-3 bg-[rgba(196,154,82,0.12)] border border-[#C49A52]/40 rounded-xl text-[#A07834] text-xs mb-4">
+                <strong>Authorization Notice</strong>: Your current persona is <code>{currentUser?.role}</code>. Batch disposition requires Quality Manager authority (<code>batch:quarantine</code> / <code>batch:release</code>). System Administrator and Production roles cannot release or hold lots without quality governance delegation. Switch to Elena Vance in the top navbar to execute this authorization.
               </div>
             )}
 
             <form onSubmit={handleRecordDecision} className="space-y-4">
               <div>
-                <label className="text-xs text-[#E3E3E3] font-semibold block mb-1">New Batch Status</label>
+                <label className="text-xs text-[#292A26] font-semibold block mb-1">New Batch Status</label>
                 <div className="grid grid-cols-2 gap-2">
                   {[
                     { id: 'ON_HOLD', label: 'Quarantine (ON HOLD)' },
@@ -424,10 +431,10 @@ export const ProductsBatchesPage: React.FC<ProductsBatchesPageProps> = ({ curren
                       key={st.id}
                       type="button"
                       onClick={() => setDecisionForm({ ...decisionForm, new_status: st.id })}
-                      className={`min-h-[44px] p-2.5 rounded-xl border text-xs font-semibold text-left transition-colors cursor-pointer ${
+                      className={`min-h-[40px] p-2.5 rounded-xl border text-xs font-semibold text-left transition-colors cursor-pointer ${
                         decisionForm.new_status === st.id
-                          ? 'bg-[#004A77] border-[#A8C7FA] text-[#C2E7FF]'
-                          : 'bg-[#1E1F20] border-[#3C4043] text-[#9AA0A6] hover:border-[#5F6368] hover:text-[#E3E3E3]'
+                          ? 'bg-[rgba(113,132,91,0.15)] border-[#71845B] text-[#292A26]'
+                          : 'bg-[#FFFCF6] border-[#D8C9AE] text-[#77766E] hover:border-[#B5A58B]'
                       }`}
                     >
                       {st.label}
@@ -437,7 +444,7 @@ export const ProductsBatchesPage: React.FC<ProductsBatchesPageProps> = ({ curren
               </div>
 
               <div>
-                <label className="text-xs text-[#E3E3E3] font-semibold block mb-1">
+                <label className="text-xs text-[#292A26] font-semibold block mb-1">
                   Formal Justification & Audit Notes (Mandatory)
                 </label>
                 <textarea
@@ -446,25 +453,25 @@ export const ProductsBatchesPage: React.FC<ProductsBatchesPageProps> = ({ curren
                   placeholder="State engineering reasons, ASTM standard compliance, defect mitigation results, or quarantine rationale..."
                   value={decisionForm.reason}
                   onChange={e => setDecisionForm({ ...decisionForm, reason: e.target.value })}
-                  className="w-full bg-[#1E1F20] border border-[#3C4043] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#A8C7FA] focus:ring-1 focus:ring-[#A8C7FA]"
+                  className="w-full bg-[#FFFCF6] border border-[#D8C9AE] rounded-xl px-3 py-2 text-xs text-[#292A26] focus:outline-none focus:border-[#71845B]"
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-4 border-t border-[#3C4043]">
+              <div className="flex justify-end gap-2 pt-4 border-t border-[#D8C9AE]">
                 <button
                   type="button"
                   onClick={() => setShowDecisionModal(false)}
-                  className="min-h-[44px] px-4 py-2 rounded-xl bg-[#303134] hover:bg-[#3C4043] border border-[#3C4043] text-[#E3E3E3] text-xs transition-colors cursor-pointer"
+                  className="btn-secondary-ivory text-xs"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={!isQualityManagerOrAdmin}
-                  className={`min-h-[44px] px-5 py-2 rounded-xl text-xs font-bold transition-colors ${
-                    isQualityManagerOrAdmin
-                      ? 'bg-[#A8C7FA] hover:bg-[#C2E7FF] text-[#041E49] cursor-pointer'
-                      : 'bg-[#303134] text-[#9AA0A6] cursor-not-allowed opacity-60'
+                  disabled={!canAuthorize}
+                  className={`min-h-[40px] px-5 py-2 rounded-xl text-xs font-bold transition-colors ${
+                    canAuthorize
+                      ? 'btn-primary-sage cursor-pointer'
+                      : 'bg-[#E2DACB] text-[#77766E] cursor-not-allowed opacity-60'
                   }`}
                 >
                   Commit Batch Disposition
@@ -477,35 +484,35 @@ export const ProductsBatchesPage: React.FC<ProductsBatchesPageProps> = ({ curren
 
       {/* Modal: Decision History */}
       {showHistoryModal && selectedBatch && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="sky-card industrial-modal-shadow w-full max-w-lg p-6 bg-[#202124] border border-[#3C4043] rounded-2xl">
+        <div className="fixed inset-0 bg-[#292A26]/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="industrial-card industrial-modal-shadow w-full max-w-lg p-6 bg-[#FFFCF6] border border-[#D8C9AE] rounded-2xl">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-base font-bold text-white">Batch Disposition Audit Trail</h3>
-              <span className="font-mono text-xs px-2 py-0.5 rounded-lg bg-[#004A77] text-[#C2E7FF] border border-[#A8C7FA]/40 font-bold">
+              <h3 className="text-base font-bold text-[#292A26]">Batch Disposition Audit Trail</h3>
+              <span className="font-mono text-xs px-2 py-0.5 rounded-lg bg-[rgba(113,132,91,0.12)] text-[#5E704B] border border-[#71845B]/40 font-bold">
                 {selectedBatch.batch_number}
               </span>
             </div>
-            <p className="text-xs text-[#9AA0A6] mb-4">Complete chronological log of hold/release decisions</p>
+            <p className="text-xs text-[#77766E] mb-4">Complete chronological log of hold/release decisions</p>
 
             <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
               {decisionHistory.length === 0 ? (
-                <div className="text-center py-6 text-[#9AA0A6] text-xs">
+                <div className="text-center py-6 text-[#77766E] text-xs">
                   No historical decisions recorded for this batch.
                 </div>
               ) : (
                 decisionHistory.map((d) => (
-                  <div key={d.id} className="p-3 bg-[#1E1F20] border border-[#3C4043] rounded-xl text-xs space-y-1">
+                  <div key={d.id} className="p-3 bg-[#F0EAE1] border border-[#D8C9AE] rounded-xl text-xs space-y-1">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <StatusBadge status={d.new_status} size="sm" />
-                        <span className="text-[#9AA0A6] text-[10px]">from {d.previous_status}</span>
+                        <span className="text-[#77766E] text-[10px]">from {d.previous_status}</span>
                       </div>
-                      <span className="text-[10px] font-mono text-[#9AA0A6]">
+                      <span className="text-[10px] font-mono text-[#77766E]">
                         {new Date(d.created_at).toLocaleString()}
                       </span>
                     </div>
-                    <p className="text-[#E3E3E3] pt-1">{d.reason}</p>
-                    <div className="text-[10px] text-[#A8C7FA] font-mono">
+                    <p className="text-[#292A26] pt-1">{d.reason}</p>
+                    <div className="text-[10px] text-[#71845B] font-mono font-semibold">
                       Decided by: {d.decided_by_name || 'Authorized Quality Manager'}
                     </div>
                   </div>
@@ -513,10 +520,10 @@ export const ProductsBatchesPage: React.FC<ProductsBatchesPageProps> = ({ curren
               )}
             </div>
 
-            <div className="flex justify-end pt-4 border-t border-[#3C4043] mt-4">
+            <div className="flex justify-end pt-4 border-t border-[#D8C9AE] mt-4">
               <button
                 onClick={() => setShowHistoryModal(false)}
-                className="min-h-[44px] px-5 py-2 rounded-xl bg-[#303134] hover:bg-[#3C4043] border border-[#3C4043] text-[#E3E3E3] text-xs font-semibold transition-colors cursor-pointer"
+                className="btn-secondary-ivory font-mono text-xs font-semibold"
               >
                 Close
               </button>

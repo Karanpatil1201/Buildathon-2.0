@@ -7,7 +7,6 @@ interface MarkdownRendererProps {
 export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
   // Parse inline elements (bold, italic, inline code)
   const renderInline = (text: string): React.ReactNode[] => {
-    // Split by markdown inline syntax
     const parts: React.ReactNode[] = [];
     let remaining = text;
     let keyIdx = 0;
@@ -19,7 +18,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) =
         parts.push(
           <code
             key={`code-${keyIdx++}`}
-            className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-[#303134] text-[#A8C7FA] border border-[#3C4043]"
+            className="font-mono text-[11.5px] px-1.5 py-0.5 rounded-md bg-[#F0EAE1] text-[#71845B] border border-[#D8C9AE] font-medium"
           >
             {codeMatch[1]}
           </code>
@@ -32,7 +31,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) =
       const boldMatch = remaining.match(/^\*\*([^*]+)\*\*/);
       if (boldMatch) {
         parts.push(
-          <strong key={`bold-${keyIdx++}`} className="font-semibold text-white">
+          <strong key={`bold-${keyIdx++}`} className="font-semibold text-[#292A26]">
             {boldMatch[1]}
           </strong>
         );
@@ -44,7 +43,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) =
       const italicMatch = remaining.match(/^(\*|_)([^*_]+)\1/);
       if (italicMatch) {
         parts.push(
-          <em key={`italic-${keyIdx++}`} className="italic text-[#E3E3E3]">
+          <em key={`italic-${keyIdx++}`} className="italic text-[#77766E]">
             {italicMatch[2]}
           </em>
         );
@@ -61,7 +60,6 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) =
         parts.push(remaining.slice(0, nextSpecial));
         remaining = remaining.slice(nextSpecial);
       } else {
-        // Character was special but did not match regex (e.g. unmatched *), advance 1 char
         parts.push(remaining[0]);
         remaining = remaining.slice(1);
       }
@@ -81,7 +79,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) =
   const flushList = () => {
     if (inList && listItems.length > 0) {
       elements.push(
-        <ul key={`list-${elements.length}`} className="my-2 space-y-1 pl-4 list-disc marker:text-[#A8C7FA]">
+        <ul key={`list-${elements.length}`} className="my-2.5 space-y-1.5 pl-4 list-disc marker:text-[#71845B]">
           {listItems}
         </ul>
       );
@@ -93,20 +91,20 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) =
   const flushTable = () => {
     if (inTable && tableHeaders.length > 0) {
       elements.push(
-        <div key={`table-${elements.length}`} className="my-3 overflow-x-auto rounded-xl border border-[#3C4043]">
+        <div key={`table-${elements.length}`} className="my-3 overflow-x-auto rounded-xl border border-[#D8C9AE]">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
-              <tr className="bg-[#1E1F20] border-b border-[#3C4043] text-[#9AA0A6] uppercase font-mono text-[11px]">
+              <tr className="bg-[#F0EAE1] border-b border-[#D8C9AE] text-[#77766E] uppercase font-sans text-[11px] tracking-wider">
                 {tableHeaders.map((th, i) => (
-                  <th key={i} className="py-2.5 px-3">{th.trim()}</th>
+                  <th key={i} className="py-2.5 px-3.5 font-semibold">{th.trim()}</th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#3C4043]/50 bg-[#202124]">
+            <tbody className="divide-y divide-[#D8C9AE]/50 bg-[#FFFCF6]">
               {tableRows.map((row, rIdx) => (
-                <tr key={rIdx} className="hover:bg-[#282A2C] transition-colors">
+                <tr key={rIdx} className="hover:bg-[#F0EAE1]/60 transition-colors">
                   {row.map((cell, cIdx) => (
-                    <td key={cIdx} className="py-2.5 px-3 text-[#E3E3E3]">
+                    <td key={cIdx} className="py-2.5 px-3.5 text-[#292A26] font-sans text-xs leading-normal">
                       {renderInline(cell.trim())}
                     </td>
                   ))}
@@ -136,7 +134,6 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) =
 
       // Check if separator line (e.g. |---|---|)
       if (cells.every(c => /^:?-+:?$/.test(c))) {
-        // separator row, ignore
         continue;
       }
 
@@ -161,7 +158,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) =
     if (trimmed.startsWith('#### ')) {
       flushList();
       elements.push(
-        <h4 key={`h4-${i}`} className="text-xs font-bold text-[#A8C7FA] uppercase tracking-wider mt-3 mb-1 font-mono">
+        <h4 key={`h4-${i}`} className="text-xs font-semibold text-[#71845B] uppercase tracking-wider mt-3 mb-1 font-sans">
           {renderInline(trimmed.slice(5))}
         </h4>
       );
@@ -170,8 +167,8 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) =
     if (trimmed.startsWith('### ')) {
       flushList();
       elements.push(
-        <h3 key={`h3-${i}`} className="text-sm font-bold text-white mt-3 mb-1.5 flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#A8C7FA] shrink-0" />
+        <h3 key={`h3-${i}`} className="text-sm font-semibold text-[#292A26] mt-3 mb-1.5 flex items-center gap-1.5 font-sans">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#71845B] shrink-0" />
           {renderInline(trimmed.slice(4))}
         </h3>
       );
@@ -180,7 +177,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) =
     if (trimmed.startsWith('## ')) {
       flushList();
       elements.push(
-        <h2 key={`h2-${i}`} className="text-base font-bold text-white mt-4 mb-2">
+        <h2 key={`h2-${i}`} className="text-base font-semibold text-[#292A26] mt-4 mb-2 font-sans tracking-tight">
           {renderInline(trimmed.slice(3))}
         </h2>
       );
@@ -189,7 +186,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) =
     if (trimmed.startsWith('# ')) {
       flushList();
       elements.push(
-        <h1 key={`h1-${i}`} className="text-lg font-bold text-white mt-4 mb-2">
+        <h1 key={`h1-${i}`} className="text-lg font-bold text-[#292A26] mt-4 mb-2 font-sans tracking-tight">
           {renderInline(trimmed.slice(2))}
         </h1>
       );
@@ -199,7 +196,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) =
     // Horizontal Rule
     if (/^(\*\*\*|---|___)$/.test(trimmed)) {
       flushList();
-      elements.push(<hr key={`hr-${i}`} className="my-3 border-[#3C4043]" />);
+      elements.push(<hr key={`hr-${i}`} className="my-3 border-[#D8C9AE]" />);
       continue;
     }
 
@@ -208,7 +205,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) =
     if (bulletMatch) {
       inList = true;
       listItems.push(
-        <li key={`li-${i}`} className="text-xs text-[#E3E3E3] leading-relaxed">
+        <li key={`li-${i}`} className="text-[13px] text-[#292A26] leading-relaxed font-sans">
           {renderInline(bulletMatch[1])}
         </li>
       );
@@ -220,8 +217,8 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) =
     if (numMatch) {
       flushList();
       elements.push(
-        <div key={`num-${i}`} className="flex items-start gap-2 my-1 text-xs text-[#E3E3E3]">
-          <span className="font-mono text-[#A8C7FA] font-bold shrink-0">{numMatch[1]}.</span>
+        <div key={`num-${i}`} className="flex items-start gap-2 my-1 text-[13px] text-[#292A26] font-sans">
+          <span className="font-mono tabular-nums text-[#71845B] font-semibold shrink-0">{numMatch[1]}.</span>
           <span className="leading-relaxed">{renderInline(numMatch[2])}</span>
         </div>
       );
@@ -231,7 +228,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) =
     // Regular paragraph
     flushList();
     elements.push(
-      <p key={`p-${i}`} className="text-xs text-[#E3E3E3] leading-relaxed my-1.5">
+      <p key={`p-${i}`} className="text-[13.5px] text-[#292A26] leading-[1.6] my-1.5 font-sans">
         {renderInline(trimmed)}
       </p>
     );

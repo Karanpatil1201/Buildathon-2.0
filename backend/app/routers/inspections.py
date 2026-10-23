@@ -49,6 +49,11 @@ def _format_inspection_out(insp: Inspection) -> InspectionOut:
         latest_heatmap_url=f"/api/v1/inspections/images/{latest_img.heatmap_path}" if latest_img and latest_img.heatmap_path else None
     )
 
+from app.rbac import (
+    PERM_INSPECTION_CREATE, PERM_INSPECTION_READ, PERM_INSPECTION_READ_ALL,
+    PERM_INSPECTION_RETRY, require_permissions, has_permission
+)
+
 @router.get("", response_model=List[InspectionOut])
 def list_inspections(
     batch_id: Optional[int] = None,
@@ -56,9 +61,15 @@ def list_inspections(
     status_filter: Optional[str] = None,
     search: Optional[str] = None,
     limit: int = 100,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions(PERM_INSPECTION_READ))
 ):
     query = db.query(Inspection)
+
+    # Object-level access check: operators may only view their own inspections
+    if not has_permission(current_user.role, PERM_INSPECTION_READ_ALL):
+        query = query.filter(Inspection.inspector_id == current_user.id)
+
     if batch_id:
         query = query.filter(Inspection.batch_id == batch_id)
     if product_id:
@@ -98,7 +109,7 @@ async def create_inspection_with_evidence(
     sample_preset: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permissions(PERM_INSPECTION_CREATE))
 ):
     # Validation
     product = db.query(Product).filter(Product.id == product_id).first()
@@ -218,12 +229,7 @@ async def create_inspection_with_evidence(
 
     return get_inspection_detail(inspection.id, db)
 
-@router.get("/{inspection_id}", response_model=InspectionDetailOut)
-def get_inspection_detail(inspection_id: int, db: Session = Depends(get_db)):
-    insp = db.query(Inspection).filter(Inspection.id == inspection_id).first()
-    if not insp:
-        raise HTTPException(status_code=404, detail="Inspection record not found")
-    
+def _format_inspection_detail(insp: Inspection) -> InspectionDetailOut:
     base_out = _format_inspection_out(insp)
     
     images_out = [
@@ -281,8 +287,41 @@ def get_inspection_detail(inspection_id: int, db: Session = Depends(get_db)):
         defect=defect_out
     )
 
+def get_inspection_detail(inspection_id: int, db: Session, current_user: Optional[User] = None) -> InspectionDetailOut:
+    insp = db.query(Inspection).filter(Inspection.id == inspection_id).first()
+    if not insp:
+        raise HTTPException(status_code=404, detail="Inspection record not found")
+    
+    # Object-level check: Operators may only view their own inspections
+    if current_user:
+        if not has_permission(current_user.role, PERM_INSPECTION_READ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Operation not permitted. Required permission: inspection:read. Your role: {current_user.role}"
+            )
+        if not has_permission(current_user.role, PERM_INSPECTION_READ_ALL):
+            if insp.inspector_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: Operators may only access inspection records they created."
+                )
+
+    return _format_inspection_detail(insp)
+
+@router.get("/{inspection_id}", response_model=InspectionDetailOut)
+def read_inspection_detail(
+    inspection_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions(PERM_INSPECTION_READ))
+):
+    return get_inspection_detail(inspection_id, db, current_user)
+
 @router.post("/{inspection_id}/retry-inference", response_model=InferenceAttemptOut)
-def retry_inference(inspection_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def retry_inference(
+    inspection_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions(PERM_INSPECTION_RETRY))
+):
     insp = db.query(Inspection).filter(Inspection.id == inspection_id).first()
     if not insp:
         raise HTTPException(status_code=404, detail="Inspection not found")

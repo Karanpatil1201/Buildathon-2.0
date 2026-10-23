@@ -3,7 +3,8 @@ export interface User {
   username: string;
   email: string;
   full_name: string;
-  role: 'admin' | 'quality_manager' | 'inspector' | 'supervisor';
+  role: 'admin' | 'quality_manager' | 'inspector' | 'supervisor' | 'production_operator' | 'quality_inspector' | 'system_admin' | string;
+  permissions?: string[];
   is_active: boolean;
   created_at: string;
 }

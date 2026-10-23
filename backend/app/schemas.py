@@ -20,7 +20,28 @@ class UserOut(BaseModel):
     email: str
     full_name: str
     role: str
+    permissions: List[str] = Field(default_factory=list)
     is_active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class UserUpdate(BaseModel):
+    role: Optional[str] = None
+    full_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    is_active: Optional[bool] = None
+
+class AuditLogOut(BaseModel):
+    id: int
+    entity_type: str
+    entity_id: int
+    actor_id: Optional[int] = None
+    action: str
+    previous_state: Optional[str] = None
+    new_state: Optional[str] = None
+    notes: Optional[str] = None
     created_at: datetime
 
     class Config:

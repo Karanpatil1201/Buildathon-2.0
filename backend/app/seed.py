@@ -11,8 +11,22 @@ from app.auth import get_password_hash
 from app.config import settings
 
 def seed_database(db: Session):
+    # Ensure dedicated Production Operator user exists even if already seeded
+    existing_op = db.query(User).filter(User.username == "op_alex").first()
+    if not existing_op and db.query(User).count() > 0:
+        op = User(
+            username="op_alex",
+            email="alex.koval@forgesight.ai",
+            full_name="Alex Koval (Production Operator)",
+            hashed_password=get_password_hash("op123"),
+            role="production_operator",
+            is_active=True
+        )
+        db.add(op)
+        db.commit()
+
     # Check if already seeded
-    if db.query(User).count() > 0:
+    if db.query(User).count() > 1:
         return
 
     print("[Seed] Initializing seed data...")
@@ -49,6 +63,14 @@ def seed_database(db: Session):
             full_name="John Davis (Production Supervisor)",
             hashed_password=get_password_hash("sup123"),
             role="supervisor",
+            is_active=True
+        ),
+        User(
+            username="op_alex",
+            email="alex.koval@forgesight.ai",
+            full_name="Alex Koval (Production Operator)",
+            hashed_password=get_password_hash("op123"),
+            role="production_operator",
             is_active=True
         )
     ]

@@ -13,6 +13,9 @@ import { DigitalTwinPage } from './pages/DigitalTwinPage';
 import { DashboardMetrics, User } from './types';
 import { api } from './api/client';
 
+import { AccessDenied } from './components/AccessDenied';
+import { hasPermission, PERM_INSPECTION_REVIEW, PERM_INSPECTION_CREATE } from './utils/rbac';
+
 export const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState<string>('overview');
@@ -60,6 +63,7 @@ export const App: React.FC = () => {
 
   const handleSwitchUser = async (username: string) => {
     const passwords: Record<string, string> = {
+      op_alex: 'op123',
       qm_elena: 'qm123',
       inspector_marcus: 'insp123',
       sup_davis: 'sup123',
@@ -76,7 +80,12 @@ export const App: React.FC = () => {
 
   const handleInspectionCreated = (id: number) => {
     setSelectedInspectionId(id);
-    setActiveTab('review');
+    // If user has review permission, route to review workbench; otherwise navigate to overview
+    if (hasPermission(currentUser, PERM_INSPECTION_REVIEW)) {
+      setActiveTab('review');
+    } else {
+      setActiveTab('overview');
+    }
     fetchMetrics();
   };
 
@@ -86,7 +95,7 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#090b10] text-slate-100 font-sans">
+    <div className="min-h-screen flex flex-col bg-[#F5F1E8] text-[#292A26] font-sans">
       {/* Opening Animation Overlay */}
       {showIntro && <IndustrialIntro onComplete={handleIntroComplete} />}
 
@@ -102,6 +111,7 @@ export const App: React.FC = () => {
       <div className="flex-1 flex max-w-7xl w-full mx-auto">
         {/* Navigation Sidebar */}
         <Sidebar
+          currentUser={currentUser}
           activeTab={activeTab}
           onTabChange={(tab) => {
             setActiveTab(tab);
@@ -136,18 +146,37 @@ export const App: React.FC = () => {
           )}
 
           {activeTab === 'new_inspection' && (
-            <NewInspectionPage
-              onInspectionCreated={handleInspectionCreated}
-            />
+            hasPermission(currentUser, PERM_INSPECTION_CREATE) ? (
+              <NewInspectionPage
+                onInspectionCreated={handleInspectionCreated}
+              />
+            ) : (
+              <AccessDenied
+                requiredRole="Production Operator / Quality Inspector"
+                requiredPermission={PERM_INSPECTION_CREATE}
+                currentUser={currentUser}
+                onNavigateHome={() => setActiveTab('overview')}
+              />
+            )
           )}
 
           {activeTab === 'review' && (
-            <InspectionReviewPage
-              currentUser={currentUser}
-              selectedInspectionId={selectedInspectionId}
-              onNavigateToActions={handleNavigateToActions}
-              onRefreshMetrics={fetchMetrics}
-            />
+            hasPermission(currentUser, PERM_INSPECTION_REVIEW) ? (
+              <InspectionReviewPage
+                currentUser={currentUser}
+                selectedInspectionId={selectedInspectionId}
+                onNavigateToActions={handleNavigateToActions}
+                onRefreshMetrics={fetchMetrics}
+              />
+            ) : (
+              <AccessDenied
+                requiredRole="Quality Inspector / Quality Manager"
+                requiredPermission={PERM_INSPECTION_REVIEW}
+                currentUser={currentUser}
+                onNavigateHome={() => setActiveTab('overview')}
+                customMessage="Review Workbench and defect disposition requires authorized Quality Inspector or Quality Manager clearance. Machine predictions remain protected from unauthorized sign-off."
+              />
+            )
           )}
 
           {activeTab === 'defects' && (
@@ -162,9 +191,18 @@ export const App: React.FC = () => {
           )}
 
           {activeTab === 'prioritization' && (
-            <PrioritizationPage
-              onSelectInspection={handleViewInspection}
-            />
+            hasPermission(currentUser, PERM_INSPECTION_REVIEW) ? (
+              <PrioritizationPage
+                onSelectInspection={handleViewInspection}
+              />
+            ) : (
+              <AccessDenied
+                requiredRole="Quality Inspector / Quality Manager"
+                requiredPermission={PERM_INSPECTION_REVIEW}
+                currentUser={currentUser}
+                onNavigateHome={() => setActiveTab('overview')}
+              />
+            )
           )}
 
           {activeTab === 'copilot' && (

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Zap, TrendingUp, CheckCircle, Clock, AlertTriangle, ArrowRight, ShieldAlert, Sparkles, BarChart3 } from 'lucide-react';
+import { Zap, ArrowRight, BarChart3 } from 'lucide-react';
 import { PrioritizedInspection, BenchmarkMetrics } from '../types';
 import { api } from '../api/client';
 import { StatusBadge } from '../components/Badge';
@@ -34,98 +34,98 @@ export const PrioritizationPage: React.FC<PrioritizationPageProps> = ({ onSelect
   }, []);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Header */}
       <div>
-        <div className="flex items-center gap-2 mb-1">
-          <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-lg bg-[#004A77] text-[#C2E7FF] border border-[#A8C7FA]/40">
-            ENGINEERING INNOVATION
+        <div className="flex items-center gap-2 mb-1.5">
+          <span className="font-mono text-[10px] font-semibold px-2 py-0.5 rounded bg-[rgba(113,132,91,0.12)] text-[#5E704B] border border-[#71845B]/30 tracking-wide">
+            ENGINEERING INNOVATION // RISK TRIAGE
           </span>
-          <span className="text-xs text-[#9AA0A6]">Deterministic Risk Ranking</span>
+          <span className="text-xs text-[#77766E] font-sans">Deterministic Risk Ranking</span>
         </div>
-        <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-          <Zap className="w-5 h-5 text-[#A8C7FA]" />
+        <h1 className="type-page-title flex items-center gap-2.5">
+          <Zap className="w-6 h-6 text-[#71845B] shrink-0" />
           Evidence-Driven Review Prioritization Engine
         </h1>
-        <p className="text-xs text-[#9AA0A6] mt-1">
+        <p className="text-xs sm:text-sm text-[#77766E] mt-1 font-sans leading-relaxed">
           Surfaces high-risk casting defects first using transparent multi-factor scoring: model uncertainty, defect probability, batch recurrence, and overdue corrective actions.
         </p>
       </div>
 
       {error && (
-        <div className="p-3 bg-[#F28B82]/10 border border-[#F28B82]/40 rounded-xl text-[#F28B82] text-xs">
+        <div className="p-3.5 bg-[rgba(201,121,88,0.12)] border border-[#C97958]/40 rounded-xl text-[#C97958] text-xs font-sans">
           {error}
         </div>
       )}
 
       {/* Benchmark Evaluation Showcase */}
       {benchmark && (
-        <div className="sky-card p-5 bg-[#1E1F20] border-[#3C4043]">
+        <div className="industrial-card p-5 shadow-sm">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-4">
             <div className="flex items-center gap-2">
-              <BarChart3 className="w-5 h-5 text-[#A8C7FA]" />
-              <h2 className="text-sm font-bold text-white">
+              <BarChart3 className="w-5 h-5 text-[#71845B] shrink-0" />
+              <h2 className="text-sm font-semibold text-[#292A26] font-sans">
                 Measurable Benchmark: Evidence-Driven Prioritization vs Standard FIFO
               </h2>
             </div>
-            <span className="text-xs font-mono px-2.5 py-1 rounded-xl bg-[#81C995]/20 text-[#81C995] border border-[#81C995]/40 font-semibold">
+            <span className="text-xs font-mono tabular-nums px-2.5 py-1 rounded-xl bg-[rgba(113,132,91,0.12)] text-[#5E704B] border border-[#71845B]/40 font-semibold">
               +{benchmark.evidence_driven_priority.efficiency_gain_pct}% Efficiency Gain
             </span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 bg-[#202124] border border-[#3C4043] rounded-xl">
-              <span className="text-xs text-[#9AA0A6] block mb-1">Time to 1st Critical Defect</span>
+            <div className="p-4 bg-[#F0EAE1] border border-[#D8C9AE] rounded-xl font-sans">
+              <span className="type-label-meta block mb-1.5">Time to 1st Critical Defect</span>
               <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-mono font-bold text-[#81C995]">
+                <span className="type-kpi-value text-[#5E704B]">
                   {benchmark.evidence_driven_priority.time_to_first_critical_defect_min} min
                 </span>
-                <span className="text-xs text-[#9AA0A6] line-through">
+                <span className="text-xs text-[#96958B] line-through font-mono tabular-nums">
                   {benchmark.fifo_baseline.time_to_first_critical_defect_min} min FIFO
                 </span>
               </div>
-              <p className="text-[11px] text-[#9AA0A6] mt-1">Faster defect isolation on production line</p>
+              <p className="text-xs text-[#77766E] mt-1 font-sans">Faster defect isolation on production line</p>
             </div>
 
-            <div className="p-4 bg-[#202124] border border-[#3C4043] rounded-xl">
-              <span className="text-xs text-[#9AA0A6] block mb-1">High-Risk Coverage in Top 20%</span>
+            <div className="p-4 bg-[#F0EAE1] border border-[#D8C9AE] rounded-xl font-sans">
+              <span className="type-label-meta block mb-1.5">High-Risk Coverage in Top 20%</span>
               <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-mono font-bold text-[#A8C7FA]">
+                <span className="type-kpi-value text-[#71845B]">
                   {(benchmark.evidence_driven_priority.high_risk_coverage_rate * 100).toFixed(0)}%
                 </span>
-                <span className="text-xs text-[#9AA0A6] line-through">20% FIFO</span>
+                <span className="text-xs text-[#96958B] line-through font-mono tabular-nums">20% FIFO</span>
               </div>
-              <p className="text-[11px] text-[#9AA0A6] mt-1">Concentrates critical items in early reviews</p>
+              <p className="text-xs text-[#77766E] mt-1 font-sans">Concentrates critical items in early reviews</p>
             </div>
 
-            <div className="p-4 bg-[#202124] border border-[#3C4043] rounded-xl">
-              <span className="text-xs text-[#9AA0A6] block mb-1">Total Queue Items Analyzed</span>
-              <div className="text-2xl font-mono font-bold text-white">
+            <div className="p-4 bg-[#F0EAE1] border border-[#D8C9AE] rounded-xl font-sans">
+              <span className="type-label-meta block mb-1.5">Total Queue Items Analyzed</span>
+              <div className="type-kpi-value text-[#292A26]">
                 {benchmark.total_items_in_backlog}
               </div>
-              <p className="text-[11px] text-[#9AA0A6] mt-1">Real-time risk computed across backlog</p>
+              <p className="text-xs text-[#77766E] mt-1 font-sans">Real-time risk computed across backlog</p>
             </div>
           </div>
 
-          <p className="text-xs text-[#9AA0A6] mt-3 pt-3 border-t border-[#3C4043] italic">
+          <p className="text-xs text-[#77766E] mt-3 pt-3 border-t border-[#D8C9AE] italic font-sans leading-relaxed">
             "{benchmark.comparison_summary}"
           </p>
         </div>
       )}
 
       {/* Prioritized Review Queue */}
-      <div className="sky-card p-5">
+      <div className="industrial-card p-5 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-sm font-bold text-white">Risk-Ranked Review Queue</h2>
-            <p className="text-xs text-[#9AA0A6]">Sorted by deterministic composite risk score</p>
+            <h2 className="text-sm font-semibold text-[#292A26] font-sans">Risk-Ranked Review Queue</h2>
+            <p className="text-xs text-[#77766E] font-sans">Sorted by deterministic composite risk score</p>
           </div>
-          <span className="text-xs font-mono text-[#9AA0A6]">{queue.length} inspections awaiting review</span>
+          <span className="text-xs font-mono tabular-nums text-[#77766E]">{queue.length} inspections awaiting review</span>
         </div>
 
         <div className="space-y-3">
           {queue.length === 0 ? (
-            <div className="p-8 text-center text-[#9AA0A6] text-xs">
+            <div className="p-8 text-center text-[#77766E] text-xs font-sans">
               No pending inspections currently in the review backlog.
             </div>
           ) : (
@@ -139,37 +139,37 @@ export const PrioritizationPage: React.FC<PrioritizationPageProps> = ({ onSelect
                   key={insp.id}
                   className={`p-4 rounded-xl border transition-all ${
                     isCritical
-                      ? 'bg-[#F28B82]/10 border-[#F28B82]/40 hover:border-[#F28B82]'
+                      ? 'bg-[rgba(201,121,88,0.08)] border-[#C97958]/50 hover:border-[#C97958]'
                       : isHigh
-                      ? 'bg-[#FDD663]/10 border-[#FDD663]/40 hover:border-[#FDD663]'
-                      : 'bg-[#202124] border-[#3C4043] hover:border-[#5F6368]'
+                      ? 'bg-[rgba(196,154,82,0.08)] border-[#C49A52]/50 hover:border-[#C49A52]'
+                      : 'bg-[#FFFCF6] border-[#D8C9AE] hover:border-[#B5A58B]'
                   }`}
                 >
                   <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                     {/* Item Identifiers */}
                     <div className="flex items-center gap-3">
-                      <div className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center font-mono font-bold border ${
+                      <div className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center font-mono font-bold border shrink-0 ${
                         isCritical
-                          ? 'bg-[#F28B82]/20 text-[#F28B82] border-[#F28B82]/50'
+                          ? 'bg-[rgba(201,121,88,0.18)] text-[#C97958] border-[#C97958]/50'
                           : isHigh
-                          ? 'bg-[#FDD663]/20 text-[#FDD663] border-[#FDD663]/50'
-                          : 'bg-[#303134] text-[#E3E3E3] border-[#3C4043]'
+                          ? 'bg-[rgba(196,154,82,0.18)] text-[#A07834] border-[#C49A52]/50'
+                          : 'bg-[#F0EAE1] text-[#292A26] border-[#D8C9AE]'
                       }`}>
-                        <span className="text-sm">{item.priority_score.toFixed(0)}</span>
+                        <span className="text-sm tabular-nums">{item.priority_score.toFixed(0)}</span>
                         <span className="text-[9px] uppercase tracking-tighter">SCORE</span>
                       </div>
 
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="font-mono font-bold text-white text-sm">
+                          <span className="font-mono font-semibold text-[#292A26] text-sm">
                             {insp.item_identifier}
                           </span>
                           <StatusBadge status={item.priority_tier} size="sm" />
-                          <span className="text-[#9AA0A6] text-xs">•</span>
-                          <span className="font-mono text-xs text-[#A8C7FA]">{insp.batch_number}</span>
+                          <span className="text-[#D8C9AE] text-xs">•</span>
+                          <span className="font-mono text-xs text-[#71845B] font-semibold">{insp.batch_number}</span>
                         </div>
-                        <div className="text-xs text-[#9AA0A6] mt-0.5">
-                          {insp.product_name} • Model Flag: <strong className={insp.latest_prediction === 'DEFECTIVE' ? 'text-[#F28B82]' : 'text-[#E3E3E3]'}>
+                        <div className="text-xs text-[#77766E] mt-0.5 font-sans">
+                          {insp.product_name} • Model Flag: <strong className={`font-semibold ${insp.latest_prediction === 'DEFECTIVE' ? 'text-[#C97958]' : 'text-[#71845B]'}`}>
                             {insp.latest_prediction || 'N/A'}
                           </strong>
                         </div>
@@ -179,7 +179,7 @@ export const PrioritizationPage: React.FC<PrioritizationPageProps> = ({ onSelect
                     {/* Action Trigger */}
                     <button
                       onClick={() => onSelectInspection(insp.id)}
-                      className="min-h-[44px] px-4 py-2 rounded-xl bg-[#A8C7FA] hover:bg-[#C2E7FF] text-[#041E49] font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                      className="btn-primary-sage font-sans text-xs font-semibold"
                     >
                       <span>Review Case</span>
                       <ArrowRight className="w-3.5 h-3.5" />
@@ -187,17 +187,17 @@ export const PrioritizationPage: React.FC<PrioritizationPageProps> = ({ onSelect
                   </div>
 
                   {/* Explainable Factor Pills */}
-                  <div className="mt-3 pt-3 border-t border-[#3C4043] flex flex-wrap gap-2">
-                    <span className="text-[10px] font-mono text-[#9AA0A6] uppercase self-center">
+                  <div className="mt-3 pt-3 border-t border-[#D8C9AE]/60 flex flex-wrap gap-2">
+                    <span className="text-[11px] font-sans font-semibold text-[#77766E] uppercase tracking-wider self-center">
                       Explainable Factors:
                     </span>
                     {item.factors.map((f, idx) => (
                       <span
                         key={idx}
-                        className="text-[10px] px-2.5 py-1 rounded-full bg-[#303134] border border-[#3C4043] text-[#E3E3E3] flex items-center gap-1.5"
+                        className="text-xs px-2.5 py-1 rounded-full bg-[#F0EAE1] border border-[#D8C9AE] text-[#292A26] flex items-center gap-1.5 font-sans"
                         title={f.description}
                       >
-                        <span className="text-[#A8C7FA] font-bold">+{f.score_contribution}</span>
+                        <span className="font-mono text-[#71845B] font-bold tabular-nums">+{f.score_contribution}</span>
                         <span>{f.factor_name}</span>
                       </span>
                     ))}

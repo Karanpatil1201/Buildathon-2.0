@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import {
   TrendingUp,
   AlertCircle,
@@ -6,12 +7,22 @@ import {
   CheckCircle2,
   ArrowRight,
   Camera,
-  Sparkles,
-  Info,
-  Box
+  Box,
+  BarChart3,
+  PieChart as PieChartIcon,
+  ShieldAlert,
+  AlertTriangle,
+  ClipboardCheck,
+  Activity,
+  Layers
 } from 'lucide-react';
-import { DashboardMetrics } from '../types';
+import { DashboardMetrics, ConfirmedDefect, CorrectiveAction, Inspection } from '../types';
 import { StatusBadge } from '../components/Badge';
+import { api } from '../api/client';
+import {
+  DefectTrendBarChart,
+  DefectCategoryDonutChart
+} from '../components/BentoCharts';
 
 interface OverviewPageProps {
   metrics: DashboardMetrics | null;
@@ -19,178 +30,572 @@ interface OverviewPageProps {
   onViewInspection: (inspectionId: number) => void;
 }
 
+interface ActionQueueItem {
+  id: string;
+  type: 'REVIEW' | 'OVERDUE_CAPA' | 'CRITICAL_DEFECT';
+  refCode: string;
+  title: string;
+  context: string;
+  owner: string;
+  severityOrStatus: string;
+  dateOrDeadline: string;
+  targetInspectionId?: number;
+}
+
 export const OverviewPage: React.FC<OverviewPageProps> = ({
   metrics,
   onNavigate,
   onViewInspection
 }) => {
+  const [defects, setDefects] = useState<ConfirmedDefect[]>([]);
+  const [actions, setActions] = useState<CorrectiveAction[]>([]);
+  const [pendingInspections, setPendingInspections] = useState<Inspection[]>([]);
+  const [inspectionFilter, setInspectionFilter] = useState<'ALL' | 'PENDING' | 'DEFECT' | 'PASSED'>('ALL');
+
+  useEffect(() => {
+    let mounted = true;
+    const loadOperationalData = async () => {
+      try {
+        const [defectList, actionList, pendingList] = await Promise.all([
+          api.getDefects(),
+          api.getActions(),
+          api.getInspections(undefined, 'UNDER_REVIEW')
+        ]);
+        if (mounted) {
+          setDefects(defectList);
+          setActions(actionList);
+          setPendingInspections(pendingList);
+        }
+      } catch (err) {
+        console.error('Failed to load operational data for quality control center:', err);
+      }
+    };
+    loadOperationalData();
+    return () => { mounted = false; };
+  }, []);
+
   if (!metrics) {
     return (
-      <div className="flex items-center justify-center h-48 text-[#8E918F] font-mono text-xs">
-        Loading quality assurance telemetry...
+      <div className="flex items-center justify-center h-64 text-[#77766E] font-mono text-xs">
+        <div className="flex flex-col items-center gap-2">
+          <div className="w-5 h-5 border-2 border-[#71845B] border-t-transparent rounded-full animate-spin" />
+          <span>Loading Steel-IQ Quality Control Center...</span>
+        </div>
       </div>
     );
   }
 
+  // Build the unified Quality Action Queue from real records
+  const actionQueue: ActionQueueItem[] = [];
+
+  // 1. Overdue Corrective Actions (Highest SLA priority)
+  actions
+    .filter(a => a.is_overdue && (a.status === 'PENDING' || a.status === 'IN_PROGRESS'))
+    .forEach(a => {
+      actionQueue.push({
+        id: `act-${a.id}`,
+        type: 'OVERDUE_CAPA',
+        refCode: a.action_code,
+        title: a.title,
+        context: `Linked Defect: ${a.defect_code || 'Unspecified'}`,
+        owner: a.assigned_to_name || 'Line Supervisor',
+        severityOrStatus: 'OVERDUE SLA',
+        dateOrDeadline: new Date(a.target_date).toLocaleDateString()
+      });
+    });
+
+  // 2. Critical Confirmed Defects awaiting containment / reinspection
+  defects
+    .filter(d => d.severity === 'CRITICAL' && d.review_status !== 'RESOLVED')
+    .slice(0, 3)
+    .forEach(d => {
+      actionQueue.push({
+        id: `def-${d.id}`,
+        type: 'CRITICAL_DEFECT',
+        refCode: d.defect_code,
+        title: `${d.defect_category}: ${d.description}`,
+        context: `Batch ${d.batch_number || 'N/A'} • ${d.product_name || 'Component'}`,
+        owner: 'Quality Engineering',
+        severityOrStatus: 'CRITICAL SEVERITY',
+        dateOrDeadline: new Date(d.created_at).toLocaleDateString(),
+        targetInspectionId: d.inspection_id
+      });
+    });
+
+  // 3. Pending Human Reviews awaiting disposition
+  pendingInspections
+    .slice(0, 4)
+    .forEach(i => {
+      actionQueue.push({
+        id: `insp-${i.id}`,
+        type: 'REVIEW',
+        refCode: i.item_identifier,
+        title: `AI Classification: ${i.latest_prediction || 'Pending Inference'} (${((i.latest_confidence || 0) * 100).toFixed(1)}%)`,
+        context: `${i.product_name || 'Component'} • Batch ${i.batch_number || 'N/A'}`,
+        owner: i.inspector_name || 'Lead Inspector',
+        severityOrStatus: 'DISPOSITION REQUIRED',
+        dateOrDeadline: new Date(i.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        targetInspectionId: i.id
+      });
+    });
+
+  // Filtered recent inspections
+  const filteredRecentInspections = (metrics.recent_inspections || []).filter(insp => {
+    if (inspectionFilter === 'PENDING') return insp.status === 'UNDER_REVIEW' || insp.status === 'INFERENCE_COMPLETED';
+    if (inspectionFilter === 'DEFECT') return insp.latest_prediction === 'DEFECTIVE' || insp.status === 'CONFIRMED_DEFECT';
+    if (inspectionFilter === 'PASSED') return insp.status === 'PASSED' || insp.latest_prediction === 'OK';
+    return true;
+  });
+
+  // Animation variants
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: { staggerChildren: 0.04 }
+    }
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 6 },
+    show: { opacity: 1, y: 0, transition: { duration: 0.22 } }
+  };
+
   return (
-    <div className="space-y-5">
-      {/* Top Industrial Domain & Compliance Notice */}
-      <div className="p-4 bg-[#1E1F20] border border-[#3C4043] rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-[#004A77]/40 text-[#A8C7FA] border border-[#A8C7FA]/30 shrink-0">
-            <Info className="w-4 h-4" />
+    <motion.div
+      variants={containerVariants}
+      initial="hidden"
+      animate="show"
+      className="space-y-5"
+    >
+      {/* =========================================================================
+          SECTION A: PLANT QUALITY CONTROL CENTER HEADER
+         ========================================================================= */}
+      <motion.div
+        variants={itemVariants}
+        className="p-5 bg-[#FFFCF6] border border-[#D8C9AE] rounded-2xl flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shadow-sm"
+      >
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-mono text-[10px] font-semibold px-2 py-0.5 rounded bg-[rgba(113,132,91,0.12)] text-[#5E704B] border border-[#71845B]/30 tracking-wider">
+              STATION 01 // LINE OPERATIONS
+            </span>
+            <span className="flex items-center gap-1.5 text-xs text-[#71845B] font-sans font-semibold">
+              <span className="w-2 h-2 rounded-full bg-[#71845B] animate-pulse" />
+              Live Quality Control Center
+            </span>
+            <span className="text-xs text-[#77766E] font-sans hidden sm:inline">•</span>
+            <span className="text-xs text-[#77766E] font-mono tabular-nums">
+              Shift A // Active
+            </span>
           </div>
-          <div>
-            <div className="flex items-center gap-2 font-mono text-[#E3E3E3] font-semibold">
-              <span>QC STAGE: OPTICAL SURFACE INSPECTION</span>
-              <span className="text-[10px] text-[#FDD663] bg-[rgba(253,214,99,0.12)] border border-[#FDD663]/30 px-2 py-0.5 rounded font-mono">
-                BASELINE CASTING WEIGHTS
-              </span>
-            </div>
-            <p className="text-[11px] text-[#C4C7C5] mt-0.5">
-              Active model runs fine-tuned MobileNetV3 (87.97% test accuracy). Ceramic-tile transfer learning dataset integration in progress.
-            </p>
+
+          <h1 className="type-page-title text-[#292A26]">
+            Plant Quality Overview
+          </h1>
+          <p className="text-xs sm:text-sm text-[#77766E] font-sans leading-relaxed">
+            Real-time optical defect telemetry, automated inference validation, containment quarantine, and closed-loop CAPA tracking.
+          </p>
+
+          {/* Operational Status Badges */}
+          <div className="flex items-center gap-2 pt-2 flex-wrap text-xs">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#F0EAE1] border border-[#D8C9AE] font-sans text-xs text-[#292A26]">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#71845B]" />
+              <span>Vision Core: <strong>MobileNetV3 PyTorch</strong></span>
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#F0EAE1] border border-[#D8C9AE] font-sans text-xs text-[#292A26]">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#71845B]" />
+              <span>Explainability: <strong>Grad-CAM Online</strong></span>
+            </span>
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-sans text-xs ${
+              metrics.batches_on_hold > 0
+                ? 'bg-[rgba(196,154,82,0.12)] border-[#C49A52]/40 text-[#A07834]'
+                : 'bg-[#F0EAE1] border-[#D8C9AE] text-[#77766E]'
+            }`}>
+              <ShieldAlert className="w-3.5 h-3.5" />
+              <span>Containment: <strong>{metrics.batches_on_hold} Lots on Hold</strong></span>
+            </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        {/* Quick Operational Actions */}
+        <div className="flex items-center gap-2 flex-wrap shrink-0">
           <button
             onClick={() => onNavigate('digital_twin')}
-            className="min-h-[44px] flex items-center gap-1.5 bg-[#303134] hover:bg-[#3C4043] text-[#E3E3E3] font-mono text-xs px-3.5 py-2 rounded-xl border border-[#3C4043] transition-colors cursor-pointer"
+            className="btn-secondary-ivory font-sans text-xs font-semibold"
           >
-            <Box className="w-3.5 h-3.5 text-[#A8C7FA]" />
-            <span>3D Twin</span>
+            <Box className="w-4 h-4 text-[#71845B]" />
+            <span>3D Line Twin</span>
           </button>
           <button
             onClick={() => onNavigate('new_inspection')}
-            className="min-h-[44px] flex items-center gap-1.5 bg-[#A8C7FA] hover:bg-[#C2E7FF] text-[#041E49] font-mono text-xs font-semibold px-4 py-2 rounded-xl transition-colors cursor-pointer shadow-sm"
+            className="btn-primary-sage font-sans text-xs font-semibold shadow-xs"
           >
-            <Camera className="w-3.5 h-3.5" />
-            <span>New Scan</span>
+            <Camera className="w-4 h-4" />
+            <span>+ Ingest Optical Scan</span>
           </button>
           <button
-            onClick={() => onNavigate('copilot')}
-            className="min-h-[44px] flex items-center gap-1.5 bg-[#303134] hover:bg-[#3C4043] text-[#E3E3E3] font-mono text-xs px-3.5 py-2 rounded-xl border border-[#3C4043] transition-colors cursor-pointer"
+            onClick={() => onNavigate('review')}
+            className="btn-secondary-ivory font-sans text-xs font-semibold"
           >
-            <Sparkles className="w-3.5 h-3.5 text-[#A8C7FA]" />
-            <span>Copilot</span>
+            <ClipboardCheck className="w-4 h-4 text-[#7895A5]" />
+            <span>Review Backlog ({metrics.pending_reviews})</span>
           </button>
         </div>
-      </div>
+      </motion.div>
 
-      {/* Compact 4-Metric Primary Status Bar */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
-        {/* Metric 1: Inspected Units */}
-        <div
+      {/* =========================================================================
+          SECTION B: OPERATIONAL QUALITY KPI ROW (5 CARDS WITH UNITS & CONTEXT)
+         ========================================================================= */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5">
+        {/* Metric 1: Total Inspected Items */}
+        <motion.div
+          variants={itemVariants}
+          whileHover={{ y: -2 }}
           onClick={() => onNavigate('review')}
-          className="industrial-card p-4 hover:border-[#5F6368] cursor-pointer transition-colors"
+          className="industrial-card p-4 hover:border-[#71845B] cursor-pointer transition-all bento-dotted-bg shadow-sm"
         >
-          <div className="flex items-center justify-between text-[#8E918F] text-xs font-mono mb-1">
-            <span>INSPECTED PARTS</span>
-            <CheckCircle2 className="w-4 h-4 text-[#A8C7FA]" />
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="type-label-meta">TOTAL INSPECTED</span>
+            <CheckCircle2 className="w-4 h-4 text-[#71845B]" />
           </div>
-          <div className="text-2xl font-mono font-bold text-[#FFFFFF]">
-            {metrics.total_inspected_items}
-          </div>
-          <p className="text-[10px] text-[#8E918F] mt-0.5">Distinct evaluated pieces</p>
-        </div>
-
-        {/* Metric 2: Defect Rate */}
-        <div className="industrial-card p-4 hover:border-[#5F6368]">
-          <div className="flex items-center justify-between text-[#8E918F] text-xs font-mono mb-1">
-            <span>PLANT DEFECT RATE</span>
-            <TrendingUp className="w-4 h-4 text-[#F28B82]" />
-          </div>
-          <div className="text-2xl font-mono font-bold text-[#F28B82]">
-            {metrics.overall_defect_rate}%
-          </div>
-          <p className="text-[10px] text-[#8E918F] mt-0.5">Confirmed defects / items</p>
-        </div>
-
-        {/* Metric 3: Pending Reviews */}
-        <div
-          onClick={() => onNavigate('review')}
-          className="industrial-card p-4 hover:border-[#FDD663]/50 cursor-pointer transition-colors"
-        >
-          <div className="flex items-center justify-between text-[#8E918F] text-xs font-mono mb-1">
-            <span>AWAITING SIGN-OFF</span>
-            <Clock className="w-4 h-4 text-[#FDD663]" />
-          </div>
-          <div className="text-2xl font-mono font-bold text-[#FDD663]">
-            {metrics.pending_reviews}
-          </div>
-          <p className="text-[10px] text-[#8E918F] mt-0.5">Requires inspector review</p>
-        </div>
-
-        {/* Metric 4: Overdue Actions */}
-        <div
-          onClick={() => onNavigate('defects', { overdueOnly: true })}
-          className="industrial-card p-4 hover:border-[#F28B82]/50 cursor-pointer transition-colors"
-        >
-          <div className="flex items-center justify-between text-[#8E918F] text-xs font-mono mb-1">
-            <span>OVERDUE REMEDIATIONS</span>
-            <AlertCircle className="w-4 h-4 text-[#F28B82]" />
-          </div>
-          <div className={`text-2xl font-mono font-bold ${metrics.overdue_actions > 0 ? 'text-[#F28B82]' : 'text-[#C4C7C5]'}`}>
-            {metrics.overdue_actions}
-          </div>
-          <p className="text-[10px] text-[#8E918F] mt-0.5">Past committed target SLA</p>
-        </div>
-      </div>
-
-      {/* Main Grid: Recent Activity & Trend Analysis */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        {/* Left: Recent Inspection Activity Table (8 Cols) */}
-        <div className="lg:col-span-8 industrial-card p-5 space-y-3">
-          <div className="flex items-center justify-between pb-3 border-b border-[#3C4043]">
-            <div>
-              <h2 className="text-xs font-bold text-[#E3E3E3] font-mono uppercase tracking-wider">
-                Inspection Activity Stream
-              </h2>
-              <p className="text-[11px] text-[#8E918F]">Chronological list of component optical scans</p>
+          <div className="flex items-baseline gap-1.5">
+            <div className="type-kpi-value">
+              {metrics.total_inspected_items}
             </div>
-            <button
-              onClick={() => onNavigate('review')}
-              className="text-xs font-mono text-[#A8C7FA] hover:text-[#C2E7FF] flex items-center gap-1 cursor-pointer"
-            >
-              <span>View All</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
+            <span className="text-xs text-[#77766E] font-mono">units</span>
           </div>
+          <p className="text-xs text-[#77766E] mt-1 font-sans">Distinct components evaluated</p>
+        </motion.div>
 
+        {/* Metric 2: Confirmed Defects & Flaw Frequency */}
+        <motion.div
+          variants={itemVariants}
+          whileHover={{ y: -2 }}
+          onClick={() => onNavigate('defects')}
+          className="industrial-card p-4 hover:border-[#C97958] cursor-pointer transition-all bento-dotted-bg shadow-sm"
+        >
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="type-label-meta">CONFIRMED DEFECTS</span>
+            <TrendingUp className="w-4 h-4 text-[#C97958]" />
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <div className="type-kpi-value text-[#C97958]">
+              {metrics.confirmed_defects}
+            </div>
+            <span className="text-xs text-[#C97958] font-mono">flaws</span>
+          </div>
+          <p className="text-xs text-[#77766E] mt-1 font-sans">
+            {metrics.overall_defect_rate}% flaw rate ({(metrics.confirmed_defects / Math.max(1, metrics.total_inspected_items)).toFixed(2)} DPU)
+          </p>
+        </motion.div>
+
+        {/* Metric 3: Pending Human Reviews */}
+        <motion.div
+          variants={itemVariants}
+          whileHover={{ y: -2 }}
+          onClick={() => onNavigate('review')}
+          className="industrial-card p-4 hover:border-[#C49A52] cursor-pointer transition-all bento-dotted-bg shadow-sm"
+        >
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="type-label-meta">PENDING REVIEWS</span>
+            <Clock className="w-4 h-4 text-[#C49A52]" />
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <div className="type-kpi-value text-[#A07834]">
+              {metrics.pending_reviews}
+            </div>
+            <span className="text-xs text-[#A07834] font-mono">items</span>
+          </div>
+          <p className="text-xs text-[#77766E] mt-1 font-sans">Awaiting inspector disposition</p>
+        </motion.div>
+
+        {/* Metric 4: Overdue Corrective Actions */}
+        <motion.div
+          variants={itemVariants}
+          whileHover={{ y: -2 }}
+          onClick={() => onNavigate('defects', { overdueOnly: true })}
+          className="industrial-card p-4 hover:border-[#C97958] cursor-pointer transition-all bento-dotted-bg shadow-sm"
+        >
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="type-label-meta">OVERDUE CAPA</span>
+            <AlertCircle className="w-4 h-4 text-[#C97958]" />
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <div className={`type-kpi-value ${metrics.overdue_actions > 0 ? 'text-[#C97958]' : 'text-[#77766E]'}`}>
+              {metrics.overdue_actions}
+            </div>
+            <span className="text-xs text-[#77766E] font-mono">overdue</span>
+          </div>
+          <p className="text-xs text-[#77766E] mt-1 font-sans">
+            {metrics.open_corrective_actions} open CAPAs active
+          </p>
+        </motion.div>
+
+        {/* Metric 5: Quarantined Batches on Hold */}
+        <motion.div
+          variants={itemVariants}
+          whileHover={{ y: -2 }}
+          onClick={() => onNavigate('batches')}
+          className="industrial-card p-4 hover:border-[#A07834] cursor-pointer transition-all bento-dotted-bg shadow-sm col-span-2 md:col-span-1"
+        >
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="type-label-meta">CONTAINMENT BUFFER</span>
+            <Layers className="w-4 h-4 text-[#7895A5]" />
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <div className="type-kpi-value text-[#292A26]">
+              {metrics.batches_on_hold}
+            </div>
+            <span className="text-xs text-[#77766E] font-mono">lots</span>
+          </div>
+          <p className="text-xs text-[#77766E] mt-1 font-sans">Quarantined batches on hold</p>
+        </motion.div>
+      </div>
+
+      {/* =========================================================================
+          SECTION C: INSPECTION PERFORMANCE CHARTS
+         ========================================================================= */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        {/* Chart 1: Bar Chart - Defects Over Time (7-Day Run) - 7 cols */}
+        <motion.div
+          variants={itemVariants}
+          className="lg:col-span-7 industrial-card p-5 space-y-3 bento-dotted-bg shadow-sm"
+        >
+          <div className="flex items-center justify-between pb-2.5 border-b border-[#D8C9AE]/60">
+            <div>
+              <div className="flex items-center gap-2">
+                <BarChart3 className="w-4 h-4 text-[#71845B]" />
+                <h2 className="text-xs font-semibold text-[#292A26] uppercase tracking-wider font-sans">
+                  Inspection Volume & Defect Trend (7-Day Run)
+                </h2>
+              </div>
+              <p className="text-xs text-[#77766E] font-sans mt-0.5">
+                Daily component throughput comparing passed components against detected flaws
+              </p>
+            </div>
+            <span className="text-[11px] font-mono text-[#77766E] bg-[#F0EAE1] px-2.5 py-1 rounded-lg border border-[#D8C9AE]">
+              Daily Volume
+            </span>
+          </div>
+          <DefectTrendBarChart trendHistory={metrics.trend_history} />
+        </motion.div>
+
+        {/* Chart 2: Donut Chart - Defect Category Distribution & FTT Yield - 5 cols */}
+        <motion.div
+          variants={itemVariants}
+          className="lg:col-span-5 industrial-card p-5 space-y-3 bento-dotted-bg shadow-sm"
+        >
+          <div className="flex items-center justify-between pb-2.5 border-b border-[#D8C9AE]/60">
+            <div>
+              <div className="flex items-center gap-2">
+                <PieChartIcon className="w-4 h-4 text-[#C97958]" />
+                <h2 className="text-xs font-semibold text-[#292A26] uppercase tracking-wider font-sans">
+                  Defect Category Distribution & Yield
+                </h2>
+              </div>
+              <p className="text-xs text-[#77766E] font-sans mt-0.5">
+                Pareto breakdown across verified manufacturing classifications
+              </p>
+            </div>
+            <span className="text-[11px] font-mono text-[#77766E] bg-[#F0EAE1] px-2.5 py-1 rounded-lg border border-[#D8C9AE] tabular-nums font-semibold">
+              {defects.length} Confirmed
+            </span>
+          </div>
+          <DefectCategoryDonutChart metrics={metrics} defects={defects} />
+        </motion.div>
+      </div>
+
+      {/* =========================================================================
+          SECTION E: IMMEDIATE QUALITY ACTION QUEUE (SURFACE CRITICAL OPERATIONAL TASKS)
+         ========================================================================= */}
+      <motion.div
+        variants={itemVariants}
+        className="industrial-card p-5 space-y-3 shadow-sm border-[#D8C9AE]"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-[#D8C9AE]/60">
+          <div>
+            <div className="flex items-center gap-2">
+              <Activity className="w-4 h-4 text-[#C97958]" />
+              <h2 className="text-sm font-semibold text-[#292A26] font-sans">
+                Immediate Quality Action Queue
+              </h2>
+            </div>
+            <p className="text-xs text-[#77766E] font-sans mt-0.5">
+              Actionable operational tasks: pending dispositions, overdue corrective actions, and critical containment
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-mono text-[#77766E] tabular-nums bg-[#F0EAE1] px-2.5 py-1 rounded-lg border border-[#D8C9AE]">
+              {actionQueue.length} Attention Items
+            </span>
+          </div>
+        </div>
+
+        {actionQueue.length === 0 ? (
+          <div className="p-8 text-center bg-[#F0EAE1]/50 rounded-xl border border-[#D8C9AE] text-xs font-sans text-[#77766E] space-y-1">
+            <CheckCircle2 className="w-6 h-6 text-[#71845B] mx-auto mb-1" />
+            <p className="font-semibold text-[#292A26]">No Immediate Escalations</p>
+            <p>All inspections reviewed and corrective actions are on track within committed SLA windows.</p>
+          </div>
+        ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
+            <table className="w-full text-left border-collapse text-xs font-sans">
               <thead>
-                <tr className="border-b border-[#3C4043] text-[#8E918F] uppercase font-mono text-[10px]">
-                  <th className="py-2.5 px-3">Item Identifier</th>
-                  <th className="py-2.5 px-3">Batch</th>
-                  <th className="py-2.5 px-3">Model Flag</th>
-                  <th className="py-2.5 px-3">Confidence</th>
-                  <th className="py-2.5 px-3">Status</th>
-                  <th className="py-2.5 px-3 text-right">Inspect</th>
+                <tr className="border-b border-[#D8C9AE] text-[#77766E] uppercase text-[11px] font-semibold tracking-wider bg-[#F0EAE1]/60">
+                  <th className="py-2.5 px-3">Escalation Type</th>
+                  <th className="py-2.5 px-3">Identifier</th>
+                  <th className="py-2.5 px-3">Operational Context</th>
+                  <th className="py-2.5 px-3">Assigned Owner</th>
+                  <th className="py-2.5 px-3">Due / Recorded</th>
+                  <th className="py-2.5 px-3 text-right">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#3C4043]/60 font-mono">
-                {metrics.recent_inspections.map((insp) => (
-                  <tr key={insp.id} className="hover:bg-[#282A2C] transition-colors">
-                    <td className="py-3 px-3 font-bold text-[#E3E3E3]">
+              <tbody className="divide-y divide-[#D8C9AE]/50">
+                {actionQueue.map((item) => (
+                  <tr key={item.id} className="hover:bg-[#F0EAE1]/70 transition-colors">
+                    <td className="py-2.5 px-3">
+                      <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold font-sans uppercase tracking-wider border ${
+                        item.type === 'OVERDUE_CAPA'
+                          ? 'bg-[rgba(201,121,88,0.12)] text-[#C97958] border-[#C97958]/35'
+                          : item.type === 'CRITICAL_DEFECT'
+                          ? 'bg-[rgba(212,91,91,0.12)] text-[#D45B5B] border-[#D45B5B]/35'
+                          : 'bg-[rgba(196,154,82,0.12)] text-[#A07834] border-[#C49A52]/35'
+                      }`}>
+                        {item.severityOrStatus}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 font-mono font-semibold text-xs text-[#292A26]">
+                      {item.refCode}
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <div className="font-semibold text-xs text-[#292A26]">{item.title}</div>
+                      <div className="text-[11px] text-[#77766E]">{item.context}</div>
+                    </td>
+                    <td className="py-2.5 px-3 text-[#292A26] text-xs">
+                      {item.owner}
+                    </td>
+                    <td className="py-2.5 px-3 font-mono text-xs tabular-nums text-[#77766E]">
+                      {item.dateOrDeadline}
+                    </td>
+                    <td className="py-2.5 px-3 text-right">
+                      {item.type === 'REVIEW' && item.targetInspectionId ? (
+                        <button
+                          onClick={() => onViewInspection(item.targetInspectionId!)}
+                          className="btn-primary-sage text-xs py-1 px-3 min-h-[32px]"
+                        >
+                          Review Evidence
+                        </button>
+                      ) : item.type === 'OVERDUE_CAPA' ? (
+                        <button
+                          onClick={() => onNavigate('defects', { overdueOnly: true })}
+                          className="px-3 py-1 rounded-lg border border-[#C97958] bg-[rgba(201,121,88,0.12)] hover:bg-[rgba(201,121,88,0.2)] text-[#C97958] font-semibold text-xs transition-colors cursor-pointer min-h-[32px]"
+                        >
+                          Manage CAPA
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => onNavigate('defects')}
+                          className="btn-secondary-ivory text-xs py-1 px-3 min-h-[32px]"
+                        >
+                          Defect Log
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </motion.div>
+
+      {/* =========================================================================
+          SECTION D: RECENT INSPECTION REGISTER
+         ========================================================================= */}
+      <motion.div
+        variants={itemVariants}
+        className="industrial-card p-5 space-y-3 bento-dotted-bg shadow-sm"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2.5 border-b border-[#D8C9AE]/60">
+          <div>
+            <h2 className="text-sm font-semibold text-[#292A26] font-sans">
+              Recent Inspection Register
+            </h2>
+            <p className="text-xs text-[#77766E] font-sans mt-0.5">
+              Continuous chronological log of component optical scans with model flags and human dispositions
+            </p>
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {[
+              { id: 'ALL', label: 'All Records' },
+              { id: 'PENDING', label: 'Pending Review' },
+              { id: 'DEFECT', label: 'Defects Flagged' },
+              { id: 'PASSED', label: 'Passed Scans' }
+            ].map(f => (
+              <button
+                key={f.id}
+                onClick={() => setInspectionFilter(f.id as any)}
+                className={`px-3 py-1.5 text-xs font-sans font-medium rounded-xl border transition-colors cursor-pointer min-h-[36px] ${
+                  inspectionFilter === f.id
+                    ? 'bg-[#71845B] text-[#FFFFFF] border-[#71845B] font-semibold shadow-xs'
+                    : 'bg-[#FFFCF6] text-[#77766E] border-[#D8C9AE] hover:text-[#292A26] hover:bg-[#F0EAE1]'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-xs font-sans">
+            <thead>
+              <tr className="border-b border-[#D8C9AE] text-[#77766E] uppercase text-[11px] font-semibold tracking-wider bg-[#F0EAE1]/60">
+                <th className="py-2.5 px-3">Item Identifier</th>
+                <th className="py-2.5 px-3">Product / Batch</th>
+                <th className="py-2.5 px-3">AI Prediction</th>
+                <th className="py-2.5 px-3">Confidence</th>
+                <th className="py-2.5 px-3">Disposition Status</th>
+                <th className="py-2.5 px-3">Logged At</th>
+                <th className="py-2.5 px-3 text-right">Workbench</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#D8C9AE]/50">
+              {filteredRecentInspections.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-[#77766E] text-xs font-sans">
+                    No inspection records found for the selected filter.
+                  </td>
+                </tr>
+              ) : (
+                filteredRecentInspections.map((insp) => (
+                  <tr key={insp.id} className="hover:bg-[#F0EAE1]/70 transition-colors">
+                    <td className="py-3 px-3 font-mono font-semibold text-xs text-[#292A26]">
                       {insp.item_identifier}
                     </td>
-                    <td className="py-3 px-3 text-[#C4C7C5]">
-                      {insp.batch_number}
+                    <td className="py-3 px-3">
+                      <div className="font-semibold text-xs text-[#292A26]">{insp.product_name || 'Component'}</div>
+                      <div className="font-mono text-xs text-[#71845B] font-medium">{insp.batch_number}</div>
                     </td>
                     <td className="py-3 px-3">
                       {insp.latest_prediction ? (
-                        <span className={`inline-flex items-center gap-1 text-[11px] font-bold ${
-                          insp.latest_prediction === 'DEFECTIVE' ? 'text-[#F28B82]' : 'text-[#81C995]'
+                        <span className={`inline-flex items-center gap-1 text-xs font-sans font-semibold uppercase tracking-wider ${
+                          insp.latest_prediction === 'DEFECTIVE' ? 'text-[#C97958]' : 'text-[#71845B]'
                         }`}>
-                          {insp.latest_prediction}
+                          {insp.latest_prediction === 'DEFECTIVE' ? (
+                            <AlertTriangle className="w-3.5 h-3.5" />
+                          ) : (
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                          )}
+                          <span>{insp.latest_prediction}</span>
                         </span>
                       ) : (
-                        <span className="text-[#8E918F]">Unprocessed</span>
+                        <span className="text-[#96958B] font-sans text-xs">Unprocessed</span>
                       )}
                     </td>
-                    <td className="py-3 px-3 text-[#C4C7C5] text-[11px]">
+                    <td className="py-3 px-3 text-[#292A26] font-mono text-xs tabular-nums font-semibold">
                       {insp.latest_confidence !== null && insp.latest_confidence !== undefined
                         ? `${(insp.latest_confidence * 100).toFixed(1)}%`
                         : '—'}
@@ -198,118 +603,25 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
                     <td className="py-3 px-3">
                       <StatusBadge status={insp.status} size="sm" />
                     </td>
+                    <td className="py-3 px-3 text-[#77766E] font-mono text-xs tabular-nums">
+                      {new Date(insp.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </td>
                     <td className="py-3 px-3 text-right">
                       <button
                         onClick={() => onViewInspection(insp.id)}
-                        className="text-[#A8C7FA] hover:text-[#C2E7FF] font-mono text-xs cursor-pointer font-medium"
+                        className="text-[#71845B] hover:text-[#5F704C] font-sans text-xs cursor-pointer font-semibold inline-flex items-center gap-1"
                       >
-                        [Open]
+                        <span>Open</span>
+                        <ArrowRight className="w-3 h-3" />
                       </button>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
-
-        {/* Right: Trend & Innovation Widget (4 Cols) */}
-        <div className="lg:col-span-4 space-y-4">
-          {/* Trend Card */}
-          <div className="industrial-card p-4 space-y-3">
-            <div className="flex items-center justify-between pb-2 border-b border-[#3C4043]">
-              <span className="text-xs font-bold text-[#E3E3E3] font-mono uppercase tracking-wider">
-                7-Day Run Trend
-              </span>
-              <span className="text-[10px] font-mono text-[#8E918F]">Daily Units</span>
-            </div>
-
-            <div className="h-36 flex items-end justify-between gap-2 pt-2 px-1 border-b border-[#3C4043]/80">
-              {metrics.trend_history.map((pt, idx) => {
-                const maxCount = Math.max(...metrics.trend_history.map(t => t.inspected_count), 5);
-                const heightPct = Math.min(100, Math.max(14, (pt.inspected_count / maxCount) * 100));
-
-                return (
-                  <div key={idx} className="flex-1 flex flex-col items-center gap-1.5 group relative">
-                    <div className="w-full flex items-end justify-center h-28">
-                      <div
-                        style={{ height: `${heightPct}%` }}
-                        className="w-full max-w-[20px] rounded-t bg-[#303134] group-hover:bg-[#A8C7FA] transition-colors relative"
-                      >
-                        {pt.defect_count > 0 && (
-                          <div
-                            style={{ height: `${Math.min(100, (pt.defect_count / pt.inspected_count) * 100)}%` }}
-                            className="w-full rounded-t bg-[#F28B82] absolute bottom-0 left-0"
-                          />
-                        )}
-                      </div>
-                    </div>
-                    <span className="text-[9px] font-mono text-[#8E918F]">{pt.date.split(' ')[1] || pt.date}</span>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="flex items-center justify-between text-[10px] font-mono text-[#8E918F]">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded bg-[#303134] border border-[#3C4043]" />
-                <span>Passed Scans</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded bg-[#F28B82]" />
-                <span>Confirmed Flaws</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Quick Review Prioritization Shortcut */}
-          <div className="industrial-card p-4 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-[#E3E3E3] font-mono uppercase tracking-wider">
-                Prioritized Triage
-              </span>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#004A77]/40 text-[#C2E7FF] border border-[#A8C7FA]/40 font-medium">
-                +82.7% GAIN
-              </span>
-            </div>
-            <p className="text-[11px] text-[#C4C7C5] leading-relaxed">
-              Prioritizes unreviewed scans by model uncertainty and batch defect recurrence over chronological FIFO order.
-            </p>
-            <button
-              onClick={() => onNavigate('prioritization')}
-              className="w-full min-h-[44px] py-2.5 px-3 rounded-xl bg-[#303134] hover:bg-[#3C4043] text-[#E3E3E3] border border-[#3C4043] text-xs font-mono font-medium flex items-center justify-center gap-2 cursor-pointer transition-colors"
-            >
-              <span>Open Prioritized Backlog</span>
-              <ArrowRight className="w-3.5 h-3.5 text-[#A8C7FA]" />
-            </button>
-          </div>
-
-          {/* 3D Ceramic Line Digital Twin Promo Card */}
-          <div className="industrial-card p-4 space-y-2.5 bg-[#1E1F20]">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-[#A8C7FA] animate-pulse" />
-                <span className="text-xs font-bold text-[#E3E3E3] font-mono uppercase tracking-wider">
-                  3D Line Digital Twin
-                </span>
-              </div>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#004A77]/40 text-[#C2E7FF] border border-[#A8C7FA]/40">
-                7 STATIONS
-              </span>
-            </div>
-            <p className="text-[11px] text-[#C4C7C5] leading-relaxed">
-              Interactive 3D procedural simulation of ceramic tile infeed, 4K optical scan gantry, MobileNetV3 inference, human review, and pneumatic quality gating.
-            </p>
-            <button
-              onClick={() => onNavigate('digital_twin')}
-              className="w-full min-h-[44px] py-2.5 px-3 rounded-xl bg-[#303134] hover:bg-[#3C4043] text-[#E3E3E3] border border-[#3C4043] text-xs font-mono font-medium flex items-center justify-center gap-2 cursor-pointer transition-colors"
-            >
-              <span>Launch 3D Inspection Twin</span>
-              <ArrowRight className="w-3.5 h-3.5 text-[#A8C7FA]" />
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 };

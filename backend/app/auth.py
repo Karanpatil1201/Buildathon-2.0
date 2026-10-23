@@ -53,11 +53,19 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 def require_roles(allowed_roles: List[str]):
+    from app.rbac import normalize_role
+    normalized_allowed = {normalize_role(r) for r in allowed_roles}
+
     def role_checker(current_user: User = Depends(get_current_user)) -> User:
-        if current_user.role not in allowed_roles:
+        user_norm_role = normalize_role(current_user.role)
+        # Check both direct match and normalized match
+        if current_user.role not in allowed_roles and user_norm_role not in normalized_allowed:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Operation not permitted. Required role: {', '.join(allowed_roles)}. Your role: {current_user.role}"
             )
         return current_user
     return role_checker
+
+from app.rbac import require_permissions, require_any_permission, has_permission
+

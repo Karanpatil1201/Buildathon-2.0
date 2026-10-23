@@ -7,7 +7,11 @@ from sqlalchemy import func
 from app.database import get_db
 from app.models import Batch, BatchDecision, Product, Inspection, ConfirmedDefect, AuditLog, User
 from app.schemas import BatchCreate, BatchUpdate, BatchDecisionCreate, BatchOut, BatchDecisionOut
-from app.auth import get_current_user, require_roles
+from app.auth import get_current_user
+from app.rbac import (
+    PERM_BATCH_READ, PERM_BATCH_CREATE, PERM_BATCH_QUARANTINE,
+    PERM_BATCH_RELEASE, require_permissions, has_permission
+)
 
 router = APIRouter(prefix="/batches", tags=["Batches"])
 
@@ -36,7 +40,8 @@ def _format_batch_out(b: Batch, db: Session) -> BatchOut:
 def list_batches(
     status_filter: Optional[str] = None,
     product_id: Optional[int] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions(PERM_BATCH_READ))
 ):
     query = db.query(Batch)
     if status_filter:
@@ -50,7 +55,7 @@ def list_batches(
 def create_batch(
     batch_in: BatchCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(["quality_manager", "admin", "supervisor", "inspector"]))
+    current_user: User = Depends(require_permissions(PERM_BATCH_CREATE))
 ):
     product = db.query(Product).filter(Product.id == batch_in.product_id).first()
     if not product:
@@ -87,7 +92,11 @@ def create_batch(
     return _format_batch_out(batch, db)
 
 @router.get("/{batch_id}", response_model=BatchOut)
-def get_batch(batch_id: int, db: Session = Depends(get_db)):
+def get_batch(
+    batch_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions(PERM_BATCH_READ))
+):
     batch = db.query(Batch).filter(Batch.id == batch_id).first()
     if not batch:
         raise HTTPException(status_code=404, detail="Batch not found")
@@ -98,16 +107,29 @@ def record_batch_decision(
     batch_id: int,
     decision_in: BatchDecisionCreate,
     db: Session = Depends(get_db),
-    # Strict server-side RBAC: Only Quality Managers and Admins can hold or release a batch
-    current_user: User = Depends(require_roles(["quality_manager", "admin"]))
+    current_user: User = Depends(get_current_user)
 ):
-    batch = db.query(Batch).filter(Batch.id == batch_id).first()
-    if not batch:
-        raise HTTPException(status_code=404, detail="Batch not found")
-    
     valid_statuses = ["IN_PROGRESS", "ON_HOLD", "RELEASED", "REJECTED"]
     if decision_in.new_status not in valid_statuses:
         raise HTTPException(status_code=400, detail=f"Invalid batch status. Allowed: {valid_statuses}")
+
+    # RBAC check: Quarantine requires batch:quarantine, Release requires batch:release
+    if decision_in.new_status in ["ON_HOLD", "REJECTED"]:
+        if not has_permission(current_user.role, PERM_BATCH_QUARANTINE):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Operation not permitted. Required permission: batch:quarantine. Only authorized Quality Managers can quarantine a batch. Your role: {current_user.role}"
+            )
+    else:
+        if not has_permission(current_user.role, PERM_BATCH_RELEASE):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Operation not permitted. Required permission: batch:release. Only authorized Quality Managers can release a batch. Your role: {current_user.role}"
+            )
+
+    batch = db.query(Batch).filter(Batch.id == batch_id).first()
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
 
     prev_status = batch.status
     batch.status = decision_in.new_status

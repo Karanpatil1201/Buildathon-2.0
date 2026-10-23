@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Inspection, HumanReview, ConfirmedDefect, AuditLog, User
 from app.schemas import HumanReviewCreate, HumanReviewOut, InspectionDetailOut
-from app.auth import get_current_user, require_roles
+from app.rbac import PERM_INSPECTION_REVIEW, require_permissions
 from app.routers.inspections import get_inspection_detail
 
 router = APIRouter(prefix="/reviews", tags=["Human Reviews"])
@@ -17,15 +17,15 @@ def submit_human_review(
     inspection_id: int,
     review_in: HumanReviewCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(["quality_manager", "admin", "supervisor", "inspector"]))
+    current_user: User = Depends(require_permissions(PERM_INSPECTION_REVIEW))
 ):
     insp = db.query(Inspection).filter(Inspection.id == inspection_id).first()
     if not insp:
         raise HTTPException(status_code=404, detail="Inspection not found")
 
     # Separation of duties check:
-    # If the user is an inspector (not quality_manager or admin), they cannot review their own submitted inspection
-    if current_user.role == "inspector" and insp.inspector_id == current_user.id:
+    # An inspector or operator cannot review or approve their own submitted inspection
+    if insp.inspector_id == current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Separation of duties policy violation: An inspector cannot review or approve their own inspection submission. A Quality Manager or Supervisor must review this record."

@@ -22,6 +22,11 @@ class User(Base):
     batch_decisions = relationship("BatchDecision", back_populates="decided_by")
     assigned_actions = relationship("CorrectiveAction", back_populates="assigned_to")
 
+    @property
+    def permissions(self):
+        from app.rbac import get_role_permissions
+        return get_role_permissions(self.role)
+
 class Product(Base):
     __tablename__ = "products"
 

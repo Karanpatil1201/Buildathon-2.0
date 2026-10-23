@@ -66,27 +66,27 @@ export const CopilotPage: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="space-y-5 max-w-5xl mx-auto">
       {/* Header */}
       <div>
-        <div className="flex items-center gap-2 mb-1">
-          <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-lg bg-[#004A77] text-[#C2E7FF] border border-[#A8C7FA]/40">
+        <div className="flex items-center gap-2 mb-1.5">
+          <span className="font-sans text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-[rgba(113,132,91,0.12)] text-[#5E704B] border border-[#71845B]/30 tracking-wider uppercase">
             GROUNDED GENERATIVE AI
           </span>
-          <span className="text-xs text-[#9AA0A6] font-mono">Zero-Hallucination Quality Assistant</span>
+          <span className="text-xs text-[#77766E] font-sans">Zero-Hallucination Quality Assistant</span>
         </div>
-        <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
-          <Sparkles className="w-5 h-5 text-[#A8C7FA]" />
+        <h1 className="type-page-title flex items-center gap-2.5">
+          <Sparkles className="w-6 h-6 text-[#71845B] shrink-0" />
           Quality Copilot — Batch Summary & Decision Support
         </h1>
-        <p className="text-xs text-[#9AA0A6] mt-1 leading-relaxed">
+        <p className="text-sm text-[#77766E] mt-1 leading-relaxed">
           Synthesizes natural language quality summaries strictly grounded in verified database inspections, confirmed defects, and CAPA logs with record citations.
         </p>
       </div>
 
       {/* Suggested Quick Queries Strip */}
-      <div className="sky-card p-4">
-        <span className="text-xs font-semibold text-[#9AA0A6] block mb-2 font-mono uppercase tracking-wider">
+      <div className="industrial-card p-4 shadow-sm">
+        <span className="type-label-meta block mb-2 text-[#77766E]">
           Verified Demonstration Queries:
         </span>
         <div className="flex flex-wrap gap-2">
@@ -95,7 +95,7 @@ export const CopilotPage: React.FC = () => {
               key={idx}
               onClick={() => handleQuery(sq.query)}
               disabled={loading}
-              className="px-3 py-2 rounded-xl bg-[#202124] hover:bg-[#303134] border border-[#3C4043] hover:border-[#A8C7FA]/50 text-[#E3E3E3] hover:text-white text-xs font-medium transition-all cursor-pointer text-left min-h-[38px] disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3.5 py-1.5 rounded-xl bg-[#F0EAE1] hover:bg-[#EBE4D8] border border-[#D8C9AE] hover:border-[#B5A58B] text-[#292A26] font-sans text-xs font-medium transition-all cursor-pointer text-left min-h-[36px] disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {sq.label}
             </button>
@@ -106,12 +106,12 @@ export const CopilotPage: React.FC = () => {
       {/* Chat Thread Messages */}
       <div className="space-y-4 min-h-[160px]">
         {messages.length === 0 && !loading && (
-          <div className="sky-card p-8 text-center text-[#9AA0A6] space-y-2">
-            <div className="w-12 h-12 rounded-2xl bg-[#202124] border border-[#3C4043] flex items-center justify-center mx-auto text-[#A8C7FA]">
+          <div className="industrial-card p-8 text-center text-[#77766E] space-y-2 shadow-sm">
+            <div className="w-12 h-12 rounded-2xl bg-[rgba(113,132,91,0.12)] border border-[#71845B]/30 flex items-center justify-center mx-auto text-[#71845B]">
               <Sparkles className="w-6 h-6" />
             </div>
-            <p className="text-sm font-semibold text-white">Ask ForgeSight Quality Copilot</p>
-            <p className="text-xs max-w-md mx-auto text-[#9AA0A6]">
+            <p className="text-base font-semibold text-[#292A26]">Ask Steel-IQ Quality Copilot</p>
+            <p className="text-xs max-w-md mx-auto text-[#77766E] leading-relaxed">
               Select a suggested demonstration query above or ask about active batches, SLA overdue items, or historical defects.
             </p>
           </div>
@@ -125,7 +125,7 @@ export const CopilotPage: React.FC = () => {
             }`}
           >
             {msg.sender === 'assistant' && (
-              <div className="w-8 h-8 rounded-full bg-[#004A77] border border-[#A8C7FA]/40 flex items-center justify-center text-[#A8C7FA] shrink-0 mt-1">
+              <div className="w-8 h-8 rounded-full bg-[#71845B] text-[#FFFFFF] flex items-center justify-center shrink-0 mt-1 shadow-sm">
                 <Sparkles className="w-4 h-4" />
               </div>
             )}
@@ -133,52 +133,52 @@ export const CopilotPage: React.FC = () => {
             <div
               className={`rounded-2xl p-4 text-xs transition-all ${
                 msg.sender === 'user'
-                  ? 'bg-[#303134] text-[#E3E3E3] border border-[#3C4043] rounded-tr-sm max-w-2xl shadow-sm'
-                  : 'bg-[#202124] text-[#E3E3E3] border border-[#3C4043] rounded-tl-sm max-w-3xl w-full shadow-md space-y-3'
+                  ? 'bg-[#F0EAE1] text-[#292A26] border border-[#D8C9AE] rounded-tr-xs max-w-2xl shadow-xs'
+                  : 'bg-[#FFFCF6] text-[#292A26] border border-[#D8C9AE] rounded-tl-xs max-w-3xl w-full shadow-sm space-y-3'
               }`}
             >
               {msg.sender === 'user' ? (
                 <div className="space-y-1">
-                  <div className="font-medium text-white">{msg.text}</div>
-                  <div className="text-[10px] text-[#9AA0A6] text-right font-mono">{msg.timestamp}</div>
+                  <div className="font-sans text-sm font-medium text-[#292A26] leading-relaxed">{msg.text}</div>
+                  <div className="text-[11px] text-[#77766E] text-right font-mono tabular-nums">{msg.timestamp}</div>
                 </div>
               ) : (
                 <div className="space-y-3">
                   {/* Assistant Header */}
-                  <div className="flex items-center justify-between pb-2 border-b border-[#3C4043]">
-                    <span className="text-[11px] font-mono font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#A8C7FA]" />
+                  <div className="flex items-center justify-between pb-2 border-b border-[#D8C9AE]/60">
+                    <span className="type-label-meta text-[#292A26] flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#71845B]" />
                       Synthesized Grounded Response
                     </span>
                     {msg.response && (
-                      <span className="text-[10px] font-mono text-[#A8C7FA] bg-[#004A77]/40 px-2.5 py-0.5 rounded border border-[#A8C7FA]/30">
+                      <span className="text-[11px] font-mono text-[#5E704B] bg-[rgba(113,132,91,0.12)] px-2 py-0.5 rounded-md border border-[#71845B]/30 font-medium">
                         Provider: {msg.response.provider}
                       </span>
                     )}
                   </div>
 
                   {/* Rendered Markdown Body */}
-                  <div className="text-xs text-[#E3E3E3] leading-relaxed">
+                  <div className="text-[13.5px] leading-relaxed text-[#292A26]">
                     <MarkdownRenderer content={msg.text} />
                   </div>
 
                   {/* Citations Grid */}
                   {msg.response && msg.response.citations && msg.response.citations.length > 0 && (
-                    <div className="pt-3 border-t border-[#3C4043] space-y-2">
-                      <div className="flex items-center gap-1.5 text-xs font-mono font-semibold text-[#9AA0A6]">
-                        <Bookmark className="w-3.5 h-3.5 text-[#A8C7FA]" />
+                    <div className="pt-3 border-t border-[#D8C9AE]/60 space-y-2">
+                      <div className="flex items-center gap-1.5 type-label-meta text-[#77766E]">
+                        <Bookmark className="w-3.5 h-3.5 text-[#7895A5]" />
                         <span>Supporting Record Citations ({msg.response.citations.length})</span>
                       </div>
                       <div className="flex flex-wrap gap-2">
                         {msg.response.citations.map((cite, idx) => (
                           <div
                             key={idx}
-                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#1E1F20] border border-[#3C4043] text-xs font-mono text-[#E3E3E3]"
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#F0EAE1] border border-[#D8C9AE] text-xs font-mono text-[#292A26]"
                           >
-                            <span className="text-[10px] font-bold text-[#A8C7FA] uppercase">
+                            <span className="text-[10px] font-semibold text-[#7895A5] uppercase">
                               [{cite.record_type}]
                             </span>
-                            <span>{cite.label}</span>
+                            <span className="tabular-nums">{cite.label}</span>
                           </div>
                         ))}
                       </div>
@@ -187,17 +187,17 @@ export const CopilotPage: React.FC = () => {
 
                   {/* Grounded Stats Strip */}
                   {msg.response && msg.response.grounded_stats && Object.keys(msg.response.grounded_stats).length > 0 && (
-                    <div className="pt-2 border-t border-[#3C4043]/60 flex flex-wrap gap-4 text-[11px] font-mono text-[#9AA0A6]">
+                    <div className="pt-2 border-t border-[#D8C9AE]/50 flex flex-wrap gap-4 text-xs font-sans text-[#77766E]">
                       {Object.entries(msg.response.grounded_stats).map(([k, v]) => (
                         <div key={k}>
-                          <span className="text-[#9AA0A6]">{k.replace(/_/g, ' ')}:</span>{' '}
-                          <strong className="text-white">{String(v)}</strong>
+                          <span className="text-[#77766E]">{k.replace(/_/g, ' ')}:</span>{' '}
+                          <strong className="font-mono tabular-nums font-semibold text-[#292A26]">{String(v)}</strong>
                         </div>
                       ))}
                     </div>
                   )}
 
-                  <div className="text-[10px] text-[#9AA0A6] text-right font-mono pt-1">
+                  <div className="text-[11px] text-[#77766E] text-right font-mono tabular-nums pt-1">
                     {msg.timestamp}
                   </div>
                 </div>
@@ -205,8 +205,8 @@ export const CopilotPage: React.FC = () => {
             </div>
 
             {msg.sender === 'user' && (
-              <div className="w-8 h-8 rounded-full bg-[#303134] border border-[#3C4043] flex items-center justify-center text-[#E3E3E3] shrink-0 mt-1">
-                <UserIcon className="w-4 h-4 text-[#9AA0A6]" />
+              <div className="w-8 h-8 rounded-full bg-[#F0EAE1] border border-[#D8C9AE] flex items-center justify-center text-[#292A26] shrink-0 mt-1">
+                <UserIcon className="w-4 h-4 text-[#77766E]" />
               </div>
             )}
           </div>
@@ -215,25 +215,25 @@ export const CopilotPage: React.FC = () => {
         {/* Loading Bubble */}
         {loading && (
           <div className="flex items-start gap-3 justify-start">
-            <div className="w-8 h-8 rounded-full bg-[#004A77] border border-[#A8C7FA]/40 flex items-center justify-center text-[#A8C7FA] shrink-0 animate-pulse">
+            <div className="w-8 h-8 rounded-full bg-[rgba(113,132,91,0.12)] border border-[#71845B]/40 flex items-center justify-center text-[#71845B] shrink-0 animate-pulse">
               <Sparkles className="w-4 h-4" />
             </div>
-            <div className="bg-[#202124] border border-[#3C4043] rounded-2xl rounded-tl-sm p-4 text-xs max-w-md flex items-center gap-3 text-[#A8C7FA]">
-              <Loader2 className="w-4 h-4 animate-spin text-[#A8C7FA]" />
-              <span className="font-mono text-xs">Analyzing verifiable audit logs & database evidence...</span>
+            <div className="bg-[#FFFCF6] border border-[#D8C9AE] rounded-2xl rounded-tl-xs p-4 text-xs max-w-md flex items-center gap-3 text-[#71845B] shadow-sm">
+              <Loader2 className="w-4 h-4 animate-spin text-[#71845B]" />
+              <span className="font-mono text-xs text-[#292A26]">Analyzing verifiable audit logs & database evidence...</span>
             </div>
           </div>
         )}
       </div>
 
       {error && (
-        <div className="p-3 bg-[#F28B82]/10 border border-[#F28B82]/40 rounded-xl text-[#F28B82] text-xs">
+        <div className="p-3 bg-[rgba(201,121,88,0.12)] border border-[#C97958]/40 rounded-xl text-[#C97958] text-xs font-sans">
           {error}
         </div>
       )}
 
       {/* Query Input Box */}
-      <form onSubmit={handleFormSubmit} className="sky-card p-2 bg-[#1E1F20] border border-[#3C4043] rounded-2xl focus-within:border-[#A8C7FA] focus-within:ring-1 focus-within:ring-[#A8C7FA] transition-all">
+      <form onSubmit={handleFormSubmit} className="industrial-card p-2 bg-[#FFFCF6] border border-[#D8C9AE] rounded-2xl focus-within:border-[#71845B] focus-within:ring-1 focus-within:ring-[#71845B] transition-all shadow-sm">
         <div className="flex items-center gap-2">
           <input
             type="text"
@@ -241,15 +241,15 @@ export const CopilotPage: React.FC = () => {
             value={query}
             onChange={e => setQuery(e.target.value)}
             disabled={loading}
-            className="flex-1 bg-transparent px-3 py-2 text-xs text-white placeholder-[#9AA0A6] focus:outline-none min-h-[44px]"
+            className="flex-1 bg-transparent px-3 py-2 text-sm text-[#292A26] placeholder-[#96958B] focus:outline-none min-h-[40px] font-sans"
           />
           <button
             type="submit"
             disabled={loading || !query.trim()}
-            className={`px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all min-h-[44px] cursor-pointer ${
+            className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all min-h-[40px] cursor-pointer font-sans ${
               loading || !query.trim()
-                ? 'bg-[#303134] text-[#9AA0A6] cursor-not-allowed opacity-60'
-                : 'bg-[#A8C7FA] hover:bg-[#C2E7FF] text-[#041E49] active:scale-95'
+                ? 'bg-[#E2DACB] text-[#77766E] cursor-not-allowed opacity-60'
+                : 'btn-primary-sage active:scale-95'
             }`}
           >
             <span>Run Query</span>

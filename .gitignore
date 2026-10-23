@@ -43,6 +43,14 @@ backend/forgesight.db-shm
 backend/forgesight.db-wal
 backend/forgesight.db
 
+# Runtime uploads
+backend/app/storage/uploads/*
+!backend/app/storage/uploads/.gitkeep
+
+# Backups & Temp files
+*.backup
+*.backup.*
+
 # OS & IDE
 .DS_Store
 Thumbs.db
@@ -50,3 +58,4 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+

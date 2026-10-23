@@ -6,7 +6,11 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import ConfirmedDefect, CorrectiveAction, Inspection, Reinspection, AuditLog, User
 from app.schemas import ConfirmedDefectOut, ConfirmedDefectUpdate, CorrectiveActionOut
-from app.auth import get_current_user, require_roles
+from app.auth import get_current_user
+from app.rbac import (
+    PERM_DEFECT_READ, PERM_DEFECT_UPDATE, PERM_DEFECT_RESOLVE,
+    require_permissions, has_permission
+)
 
 router = APIRouter(prefix="/defects", tags=["Confirmed Defects"])
 
@@ -51,7 +55,8 @@ def list_defects(
     status_filter: Optional[str] = None,
     severity_filter: Optional[str] = None,
     batch_id: Optional[int] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions(PERM_DEFECT_READ))
 ):
     query = db.query(ConfirmedDefect)
     if status_filter:
@@ -64,7 +69,11 @@ def list_defects(
     return [_format_defect_out(d) for d in defects]
 
 @router.get("/{defect_id}", response_model=ConfirmedDefectOut)
-def get_defect(defect_id: int, db: Session = Depends(get_db)):
+def get_defect(
+    defect_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions(PERM_DEFECT_READ))
+):
     defect = db.query(ConfirmedDefect).filter(ConfirmedDefect.id == defect_id).first()
     if not defect:
         raise HTTPException(status_code=404, detail="Defect not found")
@@ -77,9 +86,22 @@ def update_defect(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    if not has_permission(current_user.role, PERM_DEFECT_UPDATE):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Operation not permitted. Required permission: defect:update. Operators and administrators cannot update defect logs. Your role: {current_user.role}"
+        )
+
     defect = db.query(ConfirmedDefect).filter(ConfirmedDefect.id == defect_id).first()
     if not defect:
         raise HTTPException(status_code=404, detail="Defect not found")
+
+    if defect_in.review_status == "RESOLVED":
+        if not has_permission(current_user.role, PERM_DEFECT_RESOLVE):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Operation not permitted. Required permission: defect:resolve. Only authorized Quality Managers can close/resolve a defect."
+            )
 
     prev_status = defect.review_status
     if defect_in.review_status:

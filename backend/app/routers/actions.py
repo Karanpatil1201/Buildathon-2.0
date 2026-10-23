@@ -6,7 +6,11 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import CorrectiveAction, ConfirmedDefect, User, AuditLog
 from app.schemas import CorrectiveActionCreate, CorrectiveActionUpdate, CorrectiveActionOut
-from app.auth import get_current_user, require_roles
+from app.auth import get_current_user
+from app.rbac import (
+    PERM_CAPA_CREATE, PERM_CAPA_READ, PERM_CAPA_UPDATE,
+    PERM_CAPA_COMPLETE, PERM_CAPA_VERIFY, require_permissions, has_permission
+)
 
 router = APIRouter(prefix="/actions", tags=["Corrective Actions"])
 
@@ -35,7 +39,8 @@ def list_actions(
     status_filter: Optional[str] = None,
     assigned_user_id: Optional[int] = None,
     overdue_only: bool = False,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions(PERM_CAPA_READ))
 ):
     query = db.query(CorrectiveAction)
     if status_filter:
@@ -55,7 +60,7 @@ def list_actions(
 def create_action(
     action_in: CorrectiveActionCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permissions(PERM_CAPA_CREATE))
 ):
     defect = db.query(ConfirmedDefect).filter(ConfirmedDefect.id == action_in.defect_id).first()
     if not defect:
@@ -109,17 +114,57 @@ def update_action(
     if not action:
         raise HTTPException(status_code=404, detail="Corrective action not found")
 
+    # Permission & Separation of duties checks
+    is_assignee = (action.assigned_to_user_id == current_user.id)
+    can_update = has_permission(current_user.role, PERM_CAPA_UPDATE)
+    can_complete = has_permission(current_user.role, PERM_CAPA_COMPLETE)
+    can_verify = has_permission(current_user.role, PERM_CAPA_VERIFY)
+
     prev_status = action.status
     if action_in.status:
         valid_statuses = ["PENDING", "IN_PROGRESS", "COMPLETED", "VERIFIED"]
         if action_in.status not in valid_statuses:
             raise HTTPException(status_code=400, detail=f"Invalid action status. Allowed: {valid_statuses}")
+
+        if action_in.status == "VERIFIED":
+            if not can_verify:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Operation not permitted. Required permission: capa:verify. Inspectors, operators, and administrators cannot verify corrective actions."
+                )
+            # Separation of duties: assignee cannot verify their own completion
+            if is_assignee:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Separation of duties policy violation: The assigned owner cannot verify or sign off their own corrective action completion. An independent Quality Manager must verify."
+                )
+        elif action_in.status in ["IN_PROGRESS", "COMPLETED"]:
+            if not (is_assignee or can_complete or can_update):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Operation not permitted. Only the assigned owner or authorized quality personnel may update progress."
+                )
+        elif action_in.status == "PENDING":
+            if not can_update:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Operation not permitted. Required permission: capa:update."
+                )
+
         action.status = action_in.status
         if action_in.status in ["COMPLETED", "VERIFIED"]:
             action.completed_at = datetime.utcnow()
             # Mark defect as REINSPECTION_PENDING or IN_REMEDIATION
             if action.defect:
                 action.defect.review_status = "REINSPECTION_PENDING"
+
+    # Field updates (title, description, assignee, target_date) require capa:update
+    if action_in.title or action_in.description or action_in.assigned_to_user_id or action_in.target_date:
+        if not can_update:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Operation not permitted. Required permission: capa:update to modify action parameters."
+            )
 
     if action_in.title:
         action.title = action_in.title

@@ -38,3 +38,10 @@ def inspector_token(client):
     res = client.post("/api/v1/auth/login", data={"username": "inspector_marcus", "password": "insp123"})
     assert res.status_code == 200
     return res.json()["access_token"]
+
+@pytest.fixture(scope="session")
+def operator_token(client):
+    res = client.post("/api/v1/auth/login", data={"username": "op_alex", "password": "op123"})
+    assert res.status_code == 200
+    return res.json()["access_token"]
+
