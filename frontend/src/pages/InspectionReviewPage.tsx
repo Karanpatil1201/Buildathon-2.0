@@ -8,7 +8,8 @@ import {
   ShieldAlert,
   ArrowRight,
   AlertCircle,
-  Clock
+  Clock,
+  RefreshCw
 } from 'lucide-react';
 import { Inspection, User } from '../types';
 import { api } from '../api/client';
@@ -20,13 +21,17 @@ interface InspectionReviewPageProps {
   selectedInspectionId?: number | null;
   onNavigateToActions: (defectId: number) => void;
   onRefreshMetrics: () => void;
+  onStartReinspection?: (originalInspectionId: number, productId: number, batchId: number, itemIdentifier: string, defectType?: string) => void;
+  onViewInspection?: (id: number) => void;
 }
 
 export const InspectionReviewPage: React.FC<InspectionReviewPageProps> = ({
   currentUser,
   selectedInspectionId,
   onNavigateToActions,
-  onRefreshMetrics
+  onRefreshMetrics,
+  onStartReinspection,
+  onViewInspection
 }) => {
   const [inspections, setInspections] = useState<Inspection[]>([]);
   const [selectedInspection, setSelectedInspection] = useState<Inspection | null>(null);
@@ -37,7 +42,20 @@ export const InspectionReviewPage: React.FC<InspectionReviewPageProps> = ({
 
   // Review form state
   const [decision, setDecision] = useState<'CONFIRMED_DEFECT' | 'NO_DEFECT_CONFIRMED' | 'NEEDS_MORE_EVIDENCE'>('CONFIRMED_DEFECT');
-  const [defectCategory, setDefectCategory] = useState<string>('BLOWHOLE');
+  const [defectCategory, setDefectCategory] = useState<string>('CRAZING');
+
+  // Defect Category Auto-Suggestion: Suggest visible defect type when supported by dataset
+  useEffect(() => {
+    if (selectedInspection) {
+      const raw = `${selectedInspection.notes || ''} ${selectedInspection.item_identifier || ''} ${selectedInspection.images?.[0]?.original_filename || ''}`.toUpperCase();
+      if (raw.includes('CRAZING')) setDefectCategory('CRAZING');
+      else if (raw.includes('INCLUSION')) setDefectCategory('INCLUSION');
+      else if (raw.includes('PATCH')) setDefectCategory('PATCHES');
+      else if (raw.includes('PIT')) setDefectCategory('PITTED_SURFACE');
+      else if (raw.includes('SCALE') || raw.includes('ROLLED')) setDefectCategory('ROLLED_IN_SCALE');
+      else if (raw.includes('SCRATCH')) setDefectCategory('SCRATCHES');
+    }
+  }, [selectedInspection]);
   const [severity, setSeverity] = useState<string>('MAJOR');
   const [reason, setReason] = useState<string>('');
   const [reviewNotes, setReviewNotes] = useState<string>('');
@@ -208,10 +226,15 @@ export const InspectionReviewPage: React.FC<InspectionReviewPageProps> = ({
                       {insp.product_name} • <span className="font-mono text-[#71845B] font-semibold">{insp.batch_number}</span>
                     </div>
                     <div className="flex items-center justify-between pt-1.5 mt-1.5 border-t border-[#D8C9AE]/50 text-xs font-sans">
-                      <span className="text-[#77766E]">
-                        AI: <strong className={`font-semibold ${insp.latest_prediction === 'DEFECTIVE' ? 'text-[#C97958]' : 'text-[#71845B]'}`}>
+                      <span className="text-[#77766E] flex items-center gap-1.5 flex-wrap">
+                        <span className={`font-semibold ${insp.latest_prediction === 'DEFECTIVE' ? 'text-[#C97958]' : 'text-[#71845B]'}`}>
                           {insp.latest_prediction || 'Pending'}
-                        </strong>
+                        </span>
+                        {insp.latest_defect_type && insp.latest_defect_type !== 'NORMAL' && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-[rgba(201,121,88,0.12)] text-[#C97958] border border-[#C97958]/25">
+                            {insp.latest_defect_type.replace('_', ' ')}
+                          </span>
+                        )}
                       </span>
                       <span className="text-[#96958B] font-mono tabular-nums text-xs">
                         {new Date(insp.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -228,6 +251,78 @@ export const InspectionReviewPage: React.FC<InspectionReviewPageProps> = ({
         <div className="lg:col-span-8 space-y-4">
           {selectedInspection ? (
             <>
+              {/* Linked Original Inspection Banner (if this is a Reinspection) */}
+              {selectedInspection.is_reinspection && selectedInspection.original_inspection && (
+                <div className="p-4 bg-[rgba(196,154,82,0.12)] border-2 border-[#C49A52] rounded-xl flex items-center justify-between text-xs font-sans shadow-sm">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-bold text-[10px] uppercase px-2 py-0.5 rounded bg-[#C49A52] text-white">
+                        REINSPECTION SCAN
+                      </span>
+                      <span className="font-bold text-[#292A26]">
+                        Directly Linked Follow-Up for Original Inspection #{selectedInspection.original_inspection.id}
+                      </span>
+                    </div>
+                    <p className="text-[#77766E] text-xs">
+                      Original Component: <strong className="font-mono text-[#292A26]">{selectedInspection.original_inspection.item_identifier}</strong> | Initial Failure: <strong className="font-mono text-[#C97958]">{selectedInspection.original_inspection.latest_prediction} ({selectedInspection.original_inspection.latest_defect_type?.replace('_', ' ') || 'Defective'})</strong>
+                    </p>
+                  </div>
+                  {onViewInspection && (
+                    <button
+                      type="button"
+                      onClick={() => onViewInspection(selectedInspection.original_inspection!.id)}
+                      className="px-3 py-1.5 rounded-lg border border-[#D8C9AE] bg-[#FFFCF6] text-[#71845B] hover:text-[#292A26] text-xs font-semibold font-sans transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+                    >
+                      <span>View Original #{selectedInspection.original_inspection.id}</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Follow-up Reinspections on File Banner (if this was original) */}
+              {selectedInspection.follow_up_inspections && selectedInspection.follow_up_inspections.length > 0 && (
+                <div className="p-4 bg-[rgba(113,132,91,0.1)] border-2 border-[#71845B]/40 rounded-xl space-y-2 text-xs font-sans shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-bold text-[10px] uppercase px-2 py-0.5 rounded bg-[#71845B] text-white">
+                        FOLLOW-UP REINSPECTION RECORDED
+                      </span>
+                      <span className="font-bold text-[#292A26]">
+                        {selectedInspection.follow_up_inspections.length} Reinspection Scan(s) on File
+                      </span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                    {selectedInspection.follow_up_inspections.map((f) => (
+                      <div key={f.id} className="p-2.5 bg-[#FFFCF6] border border-[#D8C9AE] rounded-lg flex items-center justify-between">
+                        <div>
+                          <span className="font-mono font-bold text-xs text-[#292A26]">Follow-up #{f.id}</span>
+                          <span className="text-[10px] text-[#77766E] block font-mono">{f.item_identifier}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded border ${
+                            f.latest_prediction === 'OK' || f.status === 'PASSED'
+                              ? 'bg-[rgba(113,132,91,0.15)] text-[#5E704B] border-[#71845B]/30'
+                              : 'bg-[rgba(201,121,88,0.15)] text-[#C97958] border-[#C97958]/35'
+                          }`}>
+                            {f.latest_prediction || f.status}
+                          </span>
+                          {onViewInspection && (
+                            <button
+                              type="button"
+                              onClick={() => onViewInspection(f.id)}
+                              className="text-xs font-semibold text-[#71845B] hover:underline"
+                            >
+                              View →
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {/* Evidence & AI Telemetry Comparison Card */}
               <div className="industrial-card p-5 shadow-sm">
                 <div className="flex items-center justify-between mb-3">
@@ -242,9 +337,28 @@ export const InspectionReviewPage: React.FC<InspectionReviewPageProps> = ({
                       {selectedInspection.product_name} ({selectedInspection.product_code}) • Batch: <span className="font-mono text-[#71845B] font-semibold">{selectedInspection.batch_number}</span>
                     </p>
                   </div>
-                  <div className="text-right text-xs font-sans">
-                    <span className="text-[#77766E] block">Submitted by</span>
-                    <span className="text-[#292A26] font-semibold">{selectedInspection.inspector_name || 'Inspector'}</span>
+                  <div className="text-right text-xs font-sans flex items-center gap-3">
+                    {onStartReinspection && (selectedInspection.status === 'CONFIRMED_DEFECT' || latestInference?.raw_prediction === 'DEFECTIVE') && (
+                      <button
+                        type="button"
+                        onClick={() => onStartReinspection(
+                          selectedInspection.id,
+                          selectedInspection.product_id,
+                          selectedInspection.batch_id,
+                          selectedInspection.item_identifier,
+                          latestInference?.defect_type
+                        )}
+                        className="px-3 py-1.5 rounded-lg border border-[#C49A52] bg-[rgba(196,154,82,0.12)] hover:bg-[rgba(196,154,82,0.22)] text-[#A07834] text-xs font-semibold font-sans flex items-center gap-1.5 cursor-pointer transition-all shadow-2xs"
+                        title="Schedule a follow-up reinspection linked directly to this failed inspection"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Launch Reinspection</span>
+                      </button>
+                    )}
+                    <div>
+                      <span className="text-[#77766E] block">Submitted by</span>
+                      <span className="text-[#292A26] font-semibold">{selectedInspection.inspector_name || 'Inspector'}</span>
+                    </div>
                   </div>
                 </div>
 
@@ -324,13 +438,21 @@ export const InspectionReviewPage: React.FC<InspectionReviewPageProps> = ({
 
                 {/* Model Prediction Details Strip */}
                 {latestInference && (
-                  <div className="p-3.5 bg-[#F0EAE1] border border-[#D8C9AE] rounded-xl grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  <div className="p-3.5 bg-[#F0EAE1] border border-[#D8C9AE] rounded-xl grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
                     <div className="p-2 bg-[#FFFCF6] border border-[#D8C9AE] rounded-lg">
-                      <span className="text-[10px] text-[#77766E] uppercase font-sans font-semibold tracking-wider block">AI Classification</span>
+                      <span className="text-[10px] text-[#77766E] uppercase font-sans font-semibold tracking-wider block">AI Model Verdict</span>
                       <span className={`font-sans font-bold text-xs uppercase tracking-wider ${
                         latestInference.raw_prediction === 'DEFECTIVE' ? 'text-[#C97958]' : 'text-[#71845B]'
                       }`}>
                         {latestInference.raw_prediction}
+                      </span>
+                    </div>
+                    <div className="p-2 bg-[#FFFCF6] border border-[#D8C9AE] rounded-lg">
+                      <span className="text-[10px] text-[#77766E] uppercase font-sans font-semibold tracking-wider block">Detected Defect Type</span>
+                      <span className={`font-mono font-bold text-xs uppercase block truncate ${
+                        latestInference.raw_prediction === 'DEFECTIVE' ? 'text-[#C97958]' : 'text-[#71845B]'
+                      }`}>
+                        {latestInference.defect_type ? latestInference.defect_type.replace('_', ' ') : (latestInference.raw_prediction === 'DEFECTIVE' ? 'DEFECT' : 'NORMAL')}
                       </span>
                     </div>
                     <div className="p-2 bg-[#FFFCF6] border border-[#D8C9AE] rounded-lg">
@@ -446,12 +568,12 @@ export const InspectionReviewPage: React.FC<InspectionReviewPageProps> = ({
                             onChange={e => setDefectCategory(e.target.value)}
                             className="w-full min-h-[40px] bg-[#FFFCF6] border border-[#D8C9AE] rounded-xl px-3 py-2 text-xs sm:text-sm text-[#292A26] focus:outline-none focus:border-[#71845B] font-sans font-medium"
                           >
-                            <option value="BLOWHOLE">BLOWHOLE (Gas Porosity Cavity)</option>
-                            <option value="PINHOLE">PINHOLE (Subsurface Tiny Pores)</option>
-                            <option value="SHRINKAGE">SHRINKAGE (Volumetric Contraction)</option>
-                            <option value="CRACK">CRACK (Hot Tear / Stress Fracture)</option>
-                            <option value="MOULD_DROP">MOULD DROP (Sand Inclusion / Missing Boss)</option>
-                            <option value="SURFACE_ROUGHNESS">SURFACE ROUGHNESS (Excess Flash / Burr)</option>
+                            <option value="CRAZING">CRAZING (Surface Microcracks)</option>
+                            <option value="INCLUSION">INCLUSION (Non-Metallic Impurities)</option>
+                            <option value="PATCHES">PATCHES (Surface Flaws / Scale Peeling)</option>
+                            <option value="PITTED_SURFACE">PITTED SURFACE (Cavities / Pits)</option>
+                            <option value="ROLLED_IN_SCALE">ROLLED-IN SCALE (Embedded Oxidation)</option>
+                            <option value="SCRATCHES">SCRATCHES (Linear Abrasions)</option>
                           </select>
                         </div>
 

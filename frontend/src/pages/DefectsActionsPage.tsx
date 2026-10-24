@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, CheckCircle, AlertCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 import { ConfirmedDefect, CorrectiveAction, User } from '../types';
 import { api } from '../api/client';
 import { StatusBadge } from '../components/Badge';
@@ -15,6 +15,7 @@ interface DefectsActionsPageProps {
 export const DefectsActionsPage: React.FC<DefectsActionsPageProps> = ({
   currentUser,
   targetDefectId,
+  onStartReinspection,
   onRefreshMetrics
 }) => {
   const [defects, setDefects] = useState<ConfirmedDefect[]>([]);
@@ -307,6 +308,19 @@ export const DefectsActionsPage: React.FC<DefectsActionsPageProps> = ({
                     </td>
                     <td className="py-3 px-3 text-right">
                       <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => onStartReinspection(
+                            def.inspection_id,
+                            1,
+                            def.batch_id,
+                            `DEF-${def.id}-RE`
+                          )}
+                          className="px-2.5 py-1.5 rounded-lg bg-[rgba(196,154,82,0.12)] hover:bg-[rgba(196,154,82,0.22)] border border-[#C49A52] text-[#A07834] text-xs font-sans font-semibold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                          title="Execute follow-up reinspection scan linked to this defect"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          <span>Reinspect</span>
+                        </button>
                         {canCreateCapa(currentUser) && (
                           <button
                             onClick={() => handleOpenActionModal(def)}

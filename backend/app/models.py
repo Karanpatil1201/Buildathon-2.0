@@ -126,6 +126,9 @@ class InferenceAttempt(Base):
     model_version = Column(String(40), nullable=False)
     inference_duration_ms = Column(Float, nullable=False)
     raw_prediction = Column(String(40), nullable=False)  # DEFECTIVE or OK
+    defect_type = Column(String(50), nullable=True)
+    defect_display_name = Column(String(100), nullable=True)
+    class_probabilities = Column(Text, nullable=True)
     confidence_score = Column(Float, nullable=False)     # 0.0 to 1.0 (calibrated sigmoid probability)
     defect_probability = Column(Float, nullable=False)   # 0.0 to 1.0
     status = Column(String(30), default="SUCCESS", nullable=False)  # SUCCESS, FAILED

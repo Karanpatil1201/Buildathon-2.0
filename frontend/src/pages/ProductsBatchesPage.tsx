@@ -27,7 +27,7 @@ export const ProductsBatchesPage: React.FC<ProductsBatchesPageProps> = ({ curren
   const [decisionHistory, setDecisionHistory] = useState<BatchDecision[]>([]);
 
   // Form states
-  const [newProduct, setNewProduct] = useState({ code: '', name: '', category: 'Metal Castings', description: '' });
+  const [newProduct, setNewProduct] = useState({ code: '', name: '', category: 'Hot-Rolled Steel', description: '' });
   const [newBatch, setNewBatch] = useState({ product_id: 0, batch_number: '', quantity: 100 });
   const [decisionForm, setDecisionForm] = useState({ new_status: 'ON_HOLD', reason: '' });
 
@@ -58,7 +58,7 @@ export const ProductsBatchesPage: React.FC<ProductsBatchesPageProps> = ({ curren
       await api.createProduct(newProduct);
       setSuccessMsg(`Product ${newProduct.code} registered successfully!`);
       setShowProductModal(false);
-      setNewProduct({ code: '', name: '', category: 'Metal Castings', description: '' });
+      setNewProduct({ code: '', name: '', category: 'Hot-Rolled Steel', description: '' });
       loadData();
     } catch (err: any) {
       setError(err.message || 'Failed to register product');

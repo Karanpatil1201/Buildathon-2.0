@@ -284,7 +284,7 @@ class QualityCopilotEngine:
             )
 
         narrative += (
-            f"\n> **Pattern Insight**: Gas porosity and sand inclusions (blowholes/pinholes) are recurring in metal casting batches. "
+            f"\n> **Pattern Insight**: Crazing microcracks and surface inclusions are recurring in hot-rolled steel strip batches. "
             f"Ensure mould degassing temperatures and sand moisture levels are verified."
         )
 

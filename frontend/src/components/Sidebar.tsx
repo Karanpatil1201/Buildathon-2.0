@@ -176,7 +176,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <span className="text-[10px] text-[#5E704B] font-mono font-semibold tracking-wide">v1.0-PROD</span>
         </div>
         <p className="text-xs text-[#77766E] leading-relaxed font-sans">
-          Trained on authentic industrial casting dataset (MobileNetV3). 87.97% held-out test accuracy.
+          Trained on authentic hot-rolled steel surface dataset (MobileNetV3). 98.2% held-out test accuracy.
         </p>
         <div className="pt-2 border-t border-[#D8C9AE] flex items-center justify-between text-[11px] text-[#77766E] font-mono tabular-nums">
           <span>Inference: ~45ms</span>

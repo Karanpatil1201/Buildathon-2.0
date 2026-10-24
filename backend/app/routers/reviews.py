@@ -77,6 +77,23 @@ def submit_human_review(
         if existing_defect:
             existing_defect.review_status = "RESOLVED"
             existing_defect.resolved_at = datetime.utcnow()
+
+        # If this is a follow-up reinspection, resolve the original defect
+        if insp.is_reinspection and insp.original_inspection_id:
+            orig_defect = db.query(ConfirmedDefect).filter(ConfirmedDefect.inspection_id == insp.original_inspection_id).first()
+            if orig_defect and orig_defect.review_status != "RESOLVED":
+                orig_defect.review_status = "RESOLVED"
+                orig_defect.resolved_at = datetime.utcnow()
+                audit_orig_def = AuditLog(
+                    entity_type="DEFECT",
+                    entity_id=orig_defect.id,
+                    actor_id=current_user.id,
+                    action="DEFECT_RESOLVED_BY_REINSPECTION",
+                    previous_state="OPEN",
+                    new_state="RESOLVED",
+                    notes=f"Defect verified resolved via passing reinspection #{insp.id}."
+                )
+                db.add(audit_orig_def)
     else:  # NEEDS_MORE_EVIDENCE
         insp.status = "UNDER_REVIEW"
 

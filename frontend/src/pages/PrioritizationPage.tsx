@@ -48,7 +48,7 @@ export const PrioritizationPage: React.FC<PrioritizationPageProps> = ({ onSelect
           Evidence-Driven Review Prioritization Engine
         </h1>
         <p className="text-xs sm:text-sm text-[#77766E] mt-1 font-sans leading-relaxed">
-          Surfaces high-risk casting defects first using transparent multi-factor scoring: model uncertainty, defect probability, batch recurrence, and overdue corrective actions.
+          Surfaces high-risk steel surface defects first using transparent multi-factor scoring: model uncertainty, defect probability, batch recurrence, and overdue corrective actions.
         </p>
       </div>
 
@@ -170,7 +170,7 @@ export const PrioritizationPage: React.FC<PrioritizationPageProps> = ({ onSelect
                         </div>
                         <div className="text-xs text-[#77766E] mt-0.5 font-sans">
                           {insp.product_name} • Model Flag: <strong className={`font-semibold ${insp.latest_prediction === 'DEFECTIVE' ? 'text-[#C97958]' : 'text-[#71845B]'}`}>
-                            {insp.latest_prediction || 'N/A'}
+                            {insp.latest_defect_type ? `${insp.latest_prediction} (${insp.latest_defect_type.replace('_', ' ')})` : (insp.latest_prediction || 'N/A')}
                           </strong>
                         </div>
                       </div>

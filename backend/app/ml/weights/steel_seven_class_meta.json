@@ -1,0 +1,23 @@
+{
+  "classes": [
+    "crazing",
+    "inclusion",
+    "normal",
+    "patches",
+    "pitted_surface",
+    "rolled-in_scale",
+    "scratches"
+  ],
+  "class_to_idx": {
+    "crazing": 0,
+    "inclusion": 1,
+    "normal": 2,
+    "patches": 3,
+    "pitted_surface": 4,
+    "rolled-in_scale": 5,
+    "scratches": 6
+  },
+  "accuracy": 33.81,
+  "architecture": "MobileNetV3-Small-7Class-Steel-Inspector",
+  "trained_at": "2026-10-24T03:18:04Z"
+}

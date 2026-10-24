@@ -14,9 +14,19 @@ import {
   AlertTriangle,
   ClipboardCheck,
   Activity,
-  Layers
+  Layers,
+  Shield,
+  ShieldCheck,
+  UserCheck,
+  Lock,
+  Unlock,
+  Check,
+  X,
+  Tag,
+  Info,
+  Users
 } from 'lucide-react';
-import { DashboardMetrics, ConfirmedDefect, CorrectiveAction, Inspection } from '../types';
+import { DashboardMetrics, ConfirmedDefect, CorrectiveAction, Inspection, User } from '../types';
 import { StatusBadge } from '../components/Badge';
 import { api } from '../api/client';
 import {
@@ -28,7 +38,166 @@ interface OverviewPageProps {
   metrics: DashboardMetrics | null;
   onNavigate: (tab: string, filter?: any) => void;
   onViewInspection: (inspectionId: number) => void;
+  currentUser?: User | null;
+  onSwitchUser?: (username: string) => Promise<void>;
 }
+
+interface DefectTaxonomyItem {
+  code: string;
+  name: string;
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'NONE';
+  visualFeatures: string;
+  cause: string;
+  remediation: string;
+  color: string;
+}
+
+const DATASET_DEFECT_TAXONOMY: DefectTaxonomyItem[] = [
+  {
+    code: 'CRAZING',
+    name: 'Crazing (Surface Microcracks)',
+    severity: 'CRITICAL',
+    visualFeatures: 'Interconnected network of fine micro-fissures running along strip surface.',
+    cause: 'Thermal fatigue during rapid non-uniform secondary water spray cooling.',
+    remediation: 'Inspect cooling header nozzle alignment; adjust roll gap and finish.',
+    color: '#D4736A',
+  },
+  {
+    code: 'INCLUSION',
+    name: 'Inclusions (Non-Metallic Impurities)',
+    severity: 'HIGH',
+    visualFeatures: 'Isolated dark non-metallic slag or alumina particles embedded in matrix.',
+    cause: 'Slag entrapment in continuous casting tundish or deoxidation precipitate flotation failure.',
+    remediation: 'Check continuous casting tundish purity & ladle shroud inert gas seal.',
+    color: '#E59866',
+  },
+  {
+    code: 'PATCHES',
+    name: 'Patches (Surface Plate Flaws)',
+    severity: 'MEDIUM',
+    visualFeatures: 'Irregular dark surface patches with uneven oxide plate thickness.',
+    cause: 'Localized primary scale peeling failure or material adhesion on work rolls.',
+    remediation: 'Clean high-pressure descaling nozzles; service roughing descaler pumps.',
+    color: '#F4D03F',
+  },
+  {
+    code: 'PITTED_SURFACE',
+    name: 'Pitted Surface (Cavities & Pits)',
+    severity: 'CRITICAL',
+    visualFeatures: 'Periodic clusters of small crater-like depressions and surface pits.',
+    cause: 'Secondary oxide scale pressed into strip and subsequently dislodged.',
+    remediation: 'Optimize furnace atmosphere to suppress excessive tertiary scale growth.',
+    color: '#AF7AC5',
+  },
+  {
+    code: 'ROLLED_IN_SCALE',
+    name: 'Rolled-in Scale (Embedded Oxidation)',
+    severity: 'CRITICAL',
+    visualFeatures: 'Dark, fish-scale or streak-like embedded iron oxide rolled into strip.',
+    cause: 'Residual oxide scale pressed firmly into surface during reduction passes.',
+    remediation: 'Verify descaling lead time before roughing pass; inspect roll roughness.',
+    color: '#C0392B',
+  },
+  {
+    code: 'SCRATCHES',
+    name: 'Scratches (Linear Abrasions)',
+    severity: 'LOW',
+    visualFeatures: 'Straight continuous grooves or scratch tracks parallel to rolling line.',
+    cause: 'Mechanical friction with worn table guide rollers, apron plates, or line debris.',
+    remediation: 'Polish line delivery guide plates; verify strip tension and clearance.',
+    color: '#5DADE2',
+  },
+  {
+    code: 'NORMAL',
+    name: 'Normal (Defect-Free Prime Steel)',
+    severity: 'NONE',
+    visualFeatures: 'Smooth, uniform hot-rolled strip grain meeting ASTM A36 surface standard.',
+    cause: 'Stable continuous rolling process with uniform temperature and descaling.',
+    remediation: 'Proceed with coiling and release for final packaging disposition.',
+    color: '#71845B',
+  },
+];
+
+const RBAC_ROLE_DEFINITIONS = [
+  {
+    id: 'production_operator',
+    roleName: 'Production Operator',
+    sampleUser: 'op_alex',
+    sampleUserName: 'Alex Koval',
+    badge: 'LINE INTAKE & SCAN',
+    color: '#4A6B82',
+    description: 'Executes shop floor line intake, camera scan uploads, and completes assigned containment tasks.',
+    permissions: [
+      { key: 'inspection:create', label: 'Create new inspection intake scans', granted: true },
+      { key: 'inspection:infer', label: 'Trigger real ML inference & Grad-CAM', granted: true },
+      { key: 'inspection:read', label: 'View permitted inspection scans', granted: true },
+      { key: 'capa:complete', label: 'Mark assigned remediation steps complete', granted: true },
+      { key: 'batch:read', label: 'View production batch queue & status', granted: true },
+      { key: 'inspection:review', label: 'Authorize or confirm defect dispositions', granted: false },
+      { key: 'batch:release', label: 'Release quarantined production lots', granted: false },
+      { key: 'capa:verify', label: 'Sign off or verify CAPA effectiveness', granted: false },
+      { key: 'users:manage', label: 'System user & credential administration', granted: false },
+    ],
+  },
+  {
+    id: 'quality_inspector',
+    roleName: 'Quality Inspector',
+    sampleUser: 'inspector_marcus',
+    sampleUserName: 'Marcus Lee',
+    badge: 'DISPOSITION WORKBENCH',
+    color: '#5E704B',
+    description: 'Evaluates Grad-CAM evidence heatmaps, classifies defect taxonomy, and confirms quality dispositions.',
+    permissions: [
+      { key: 'inspection:review', label: 'Access disposition workbench & heatmaps', granted: true },
+      { key: 'defect:create', label: 'Confirm defect taxonomy from dataset', granted: true },
+      { key: 'defect:flag', label: 'Flag suspect batches for containment', granted: true },
+      { key: 'inspection:read_all', label: 'Audit all plant inspection scans', granted: true },
+      { key: 'dashboard:kpi', label: 'Inspect quality analytics & defect KPIs', granted: true },
+      { key: 'self_approval', label: 'Approve self-submitted inspection scans', granted: false },
+      { key: 'batch:release', label: 'Release quarantined production lots', granted: false },
+      { key: 'capa:close', label: 'Sign off or close CAPA investigations', granted: false },
+      { key: 'users:manage', label: 'System user & credential administration', granted: false },
+    ],
+  },
+  {
+    id: 'quality_manager',
+    roleName: 'Quality Manager',
+    sampleUser: 'qm_elena',
+    sampleUserName: 'Elena Vance',
+    badge: 'GOVERNANCE & CONTAINMENT',
+    color: '#8B4513',
+    description: 'Owns plant quality performance, batch quarantine/release authority, and CAPA governance.',
+    permissions: [
+      { key: 'batch:quarantine', label: 'Quarantine out-of-spec production lots', granted: true },
+      { key: 'batch:release', label: 'Formally release batches for shipment', granted: true },
+      { key: 'capa:assign', label: 'Assign root-cause CAPAs to supervisors', granted: true },
+      { key: 'capa:verify', label: 'Verify remediation & close CAPA logs', granted: true },
+      { key: 'defect:resolve', label: 'Sign off on resolved quality items', granted: true },
+      { key: 'inspection:review', label: 'Full review authority across all stations', granted: true },
+      { key: 'audit:read', label: 'Audit immutable compliance logs', granted: true },
+      { key: 'system:config', label: 'Configure IT security & system passwords', granted: false },
+    ],
+  },
+  {
+    id: 'system_admin',
+    roleName: 'System Administrator',
+    sampleUser: 'admin',
+    sampleUserName: 'Sarah Connor',
+    badge: 'SECURITY & ACCESS',
+    color: '#2C3E50',
+    description: 'Manages user accounts, cryptographic audit trails, role assignments, and IT system configuration.',
+    permissions: [
+      { key: 'users:create', label: 'Provision new employee user accounts', granted: true },
+      { key: 'users:update', label: 'Deactivate users & update credentials', granted: true },
+      { key: 'roles:assign', label: 'Assign & revoke system access roles', granted: true },
+      { key: 'audit:read', label: 'Inspect immutable SHA-256 audit logs', granted: true },
+      { key: 'system:config', label: 'Manage server runtime & security configuration', granted: true },
+      { key: 'batch:release', label: 'Override lot quality release dispositions', granted: false },
+      { key: 'defect:create', label: 'Approve product defect classifications', granted: false },
+      { key: 'capa:verify', label: 'Sign off on metallurgical CAPA actions', granted: false },
+    ],
+  },
+];
 
 interface ActionQueueItem {
   id: string;
@@ -45,7 +214,9 @@ interface ActionQueueItem {
 export const OverviewPage: React.FC<OverviewPageProps> = ({
   metrics,
   onNavigate,
-  onViewInspection
+  onViewInspection,
+  currentUser,
+  onSwitchUser
 }) => {
   const [defects, setDefects] = useState<ConfirmedDefect[]>([]);
   const [actions, setActions] = useState<CorrectiveAction[]>([]);
@@ -573,7 +744,14 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
                 filteredRecentInspections.map((insp) => (
                   <tr key={insp.id} className="hover:bg-[#F0EAE1]/70 transition-colors">
                     <td className="py-3 px-3 font-mono font-semibold text-xs text-[#292A26]">
-                      {insp.item_identifier}
+                      <div className="flex flex-col gap-0.5">
+                        <span>{insp.item_identifier}</span>
+                        {insp.is_reinspection && (
+                          <span className="inline-flex items-center gap-1 text-[9px] font-mono font-bold uppercase bg-[rgba(196,154,82,0.15)] text-[#A07834] border border-[#C49A52]/30 px-1 py-0.2 rounded w-fit">
+                            <span>REINSPECTION (OF #{insp.original_inspection_id})</span>
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="py-3 px-3">
                       <div className="font-semibold text-xs text-[#292A26]">{insp.product_name || 'Component'}</div>
@@ -581,16 +759,27 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
                     </td>
                     <td className="py-3 px-3">
                       {insp.latest_prediction ? (
-                        <span className={`inline-flex items-center gap-1 text-xs font-sans font-semibold uppercase tracking-wider ${
-                          insp.latest_prediction === 'DEFECTIVE' ? 'text-[#C97958]' : 'text-[#71845B]'
-                        }`}>
-                          {insp.latest_prediction === 'DEFECTIVE' ? (
-                            <AlertTriangle className="w-3.5 h-3.5" />
+                        <div className="flex flex-col gap-1 items-start">
+                          <span className={`inline-flex items-center gap-1 text-xs font-sans font-bold uppercase tracking-wider ${
+                            insp.latest_prediction === 'DEFECTIVE' ? 'text-[#C97958]' : 'text-[#71845B]'
+                          }`}>
+                            {insp.latest_prediction === 'DEFECTIVE' ? (
+                              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                            ) : (
+                              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                            )}
+                            <span>{insp.latest_prediction}</span>
+                          </span>
+                          {insp.latest_defect_type && insp.latest_defect_type !== 'NORMAL' ? (
+                            <span className="inline-block text-[10px] font-mono font-bold uppercase tracking-wider bg-[rgba(201,121,88,0.12)] text-[#C97958] px-1.5 py-0.5 rounded border border-[#C97958]/25">
+                              {insp.latest_defect_type.replace('_', ' ')}
+                            </span>
                           ) : (
-                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span className="text-[10px] font-mono text-[#71845B] font-semibold">
+                              Prime Surface
+                            </span>
                           )}
-                          <span>{insp.latest_prediction}</span>
-                        </span>
+                        </div>
                       ) : (
                         <span className="text-[#96958B] font-sans text-xs">Unprocessed</span>
                       )}
@@ -622,6 +811,223 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
           </table>
         </div>
       </motion.div>
+      {/* =========================================================================
+          SECTION F: DATASET DEFECT CLASSIFICATION TAXONOMY (NEU STEEL LABELS ONLY)
+         ========================================================================= */}
+      <motion.div
+        variants={itemVariants}
+        className="industrial-card p-5 space-y-4 shadow-sm border-[#D8C9AE]"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#D8C9AE]/60">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="font-mono text-[10px] font-semibold px-2 py-0.5 rounded bg-[rgba(113,132,91,0.12)] text-[#5E704B] border border-[#71845B]/30 tracking-wider">
+                NEU DATASET GROUND TRUTH // TAXONOMY RESTRICTION
+              </span>
+              <span className="inline-flex items-center gap-1 text-[11px] text-[#71845B] font-mono font-semibold">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Only Dataset-Supplied Defect Classes Permitted
+              </span>
+            </div>
+            <h2 className="text-sm font-semibold text-[#292A26] font-sans flex items-center gap-2">
+              <Tag className="w-4 h-4 text-[#71845B]" />
+              Defect-Category Classification & Visual Standards
+            </h2>
+            <p className="text-xs text-[#77766E] font-sans mt-0.5">
+              Inference suggestions and human review confirmations are strictly bound to the 6 hot-rolled steel surface defect categories defined in the verified dataset.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-[#77766E] font-mono tabular-nums bg-[#F0EAE1] px-2.5 py-1 rounded-lg border border-[#D8C9AE]">
+              7 Total Classes (6 Defect + 1 Prime)
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          {DATASET_DEFECT_TAXONOMY.map((item) => {
+            const confirmedCount = defects.filter(
+              d => (d.defect_category || '').toUpperCase().trim() === item.code
+            ).length;
+
+            return (
+              <div
+                key={item.code}
+                className="p-3.5 bg-[#FFFCF6] border border-[#D8C9AE] rounded-xl flex flex-col justify-between hover:border-[#71845B] transition-colors shadow-2xs space-y-2.5"
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-1.5 mb-1.5">
+                    <span className="font-mono text-xs font-bold text-[#292A26] tracking-tight flex items-center gap-1.5">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: item.color }}
+                      />
+                      {item.code}
+                    </span>
+                    <span
+                      className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded border ${
+                        item.severity === 'CRITICAL'
+                          ? 'bg-[#D4736A]/10 text-[#C0392B] border-[#D4736A]/40'
+                          : item.severity === 'HIGH'
+                          ? 'bg-[#E59866]/10 text-[#D35400] border-[#E59866]/40'
+                          : item.severity === 'MEDIUM'
+                          ? 'bg-[#F4D03F]/15 text-[#B7950B] border-[#F4D03F]/50'
+                          : item.severity === 'LOW'
+                          ? 'bg-[#5DADE2]/10 text-[#2980B9] border-[#5DADE2]/40'
+                          : 'bg-[#71845B]/10 text-[#5E704B] border-[#71845B]/40'
+                      }`}
+                    >
+                      {item.severity}
+                    </span>
+                  </div>
+
+                  <p className="text-xs font-semibold text-[#292A26] font-sans mb-1">
+                    {item.name}
+                  </p>
+
+                  <div className="space-y-1 text-[11px] font-sans text-[#77766E]">
+                    <p>
+                      <strong className="text-[#292A26] font-medium">Visual: </strong>
+                      {item.visualFeatures}
+                    </p>
+                    <p>
+                      <strong className="text-[#292A26] font-medium">Root Cause: </strong>
+                      {item.cause}
+                    </p>
+                    <p className="text-[#5E704B]">
+                      <strong className="text-[#292A26] font-medium">CAPA Action: </strong>
+                      {item.remediation}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-[#D8C9AE]/40 flex items-center justify-between text-[11px] font-mono">
+                  <span className="text-[#96958B]">Live Occurrences:</span>
+                  <span className={`font-bold px-2 py-0.5 rounded ${confirmedCount > 0 ? 'bg-[#D4736A]/10 text-[#C0392B]' : 'bg-[#E4DCCE] text-[#77766E]'}`}>
+                    {confirmedCount} Confirmed
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </motion.div>
+
+      {/* =========================================================================
+          SECTION G: ROLE-BASED ACCESS CONTROL (RBAC) GOVERNANCE & PERMISSION MATRIX
+         ========================================================================= */}
+      <motion.div
+        variants={itemVariants}
+        className="industrial-card p-5 space-y-4 shadow-sm border-[#D8C9AE] bg-gradient-to-b from-[#FFFCF6] to-[#F9F5EC]"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#D8C9AE]/60">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="font-mono text-[10px] font-semibold px-2 py-0.5 rounded bg-[#2C3E50]/10 text-[#2C3E50] border border-[#2C3E50]/30 tracking-wider">
+                SECURITY & SEPARATION OF DUTIES // 21 CFR COMPLIANT
+              </span>
+              <span className="inline-flex items-center gap-1 text-[11px] text-[#71845B] font-mono font-semibold">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                Multi-Tier Role Governance Active
+              </span>
+            </div>
+            <h2 className="text-sm font-semibold text-[#292A26] font-sans flex items-center gap-2">
+              <Users className="w-4 h-4 text-[#71845B]" />
+              Role-Based Access Control (RBAC) Permissions Matrix
+            </h2>
+            <p className="text-xs text-[#77766E] font-sans mt-0.5">
+              Distinct operational boundaries ensure that operators who scan metal strips cannot sign off on defect release, and system admins cannot bypass quality containment.
+            </p>
+          </div>
+
+          {currentUser && (
+            <div className="flex items-center gap-2 bg-[#FFFCF6] px-3 py-1.5 rounded-xl border border-[#D8C9AE] shadow-2xs">
+              <UserCheck className="w-4 h-4 text-[#71845B]" />
+              <div className="text-right">
+                <span className="text-[10px] font-mono text-[#96958B] block">Current Persona</span>
+                <span className="text-xs font-bold text-[#292A26] font-sans">
+                  {currentUser.full_name} ({currentUser.role})
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-4">
+          {RBAC_ROLE_DEFINITIONS.map((roleDef) => {
+            const isCurrent = currentUser?.role === roleDef.id || (currentUser?.username === roleDef.sampleUser);
+
+            return (
+              <div
+                key={roleDef.id}
+                className={`p-4 rounded-xl border transition-all flex flex-col justify-between ${
+                  isCurrent
+                    ? 'bg-[#FFFCF6] border-2 border-[#71845B] shadow-sm ring-2 ring-[#71845B]/10'
+                    : 'bg-[#FFFCF6]/80 border-[#D8C9AE] hover:border-[#71845B]/60'
+                }`}
+              >
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded tracking-wide" style={{ backgroundColor: `${roleDef.color}15`, color: roleDef.color }}>
+                        {roleDef.badge}
+                      </span>
+                      <h3 className="text-sm font-bold text-[#292A26] font-sans mt-1.5">
+                        {roleDef.roleName}
+                      </h3>
+                      <p className="text-[11px] font-mono text-[#77766E]">
+                        Demo: {roleDef.sampleUserName} (<code>{roleDef.sampleUser}</code>)
+                      </p>
+                    </div>
+
+                    {isCurrent && (
+                      <span className="font-mono text-[9px] font-bold bg-[#71845B] text-white px-2 py-0.5 rounded-full uppercase tracking-wider">
+                        Active
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="text-xs text-[#77766E] font-sans leading-relaxed">
+                    {roleDef.description}
+                  </p>
+
+                  <div className="pt-2 border-t border-[#D8C9AE]/40 space-y-1.5">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#96958B] block mb-1">
+                      Permissions & Boundaries:
+                    </span>
+                    {roleDef.permissions.map((p) => (
+                      <div key={p.key} className="flex items-start gap-1.5 text-xs font-sans">
+                        {p.granted ? (
+                          <Check className="w-3.5 h-3.5 text-[#71845B] shrink-0 mt-0.5" />
+                        ) : (
+                          <X className="w-3.5 h-3.5 text-[#C0392B] shrink-0 mt-0.5" />
+                        )}
+                        <span className={p.granted ? 'text-[#292A26] font-medium' : 'text-[#96958B] line-through'}>
+                          {p.label}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {onSwitchUser && !isCurrent && (
+                  <div className="pt-3 mt-3 border-t border-[#D8C9AE]/40">
+                    <button
+                      type="button"
+                      onClick={() => onSwitchUser(roleDef.sampleUser)}
+                      className="w-full py-1.5 px-3 rounded-lg text-xs font-sans font-semibold bg-[#F0EAE1] hover:bg-[#71845B] hover:text-white text-[#292A26] border border-[#D8C9AE] transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <UserCheck className="w-3.5 h-3.5" />
+                      <span>Switch to {roleDef.sampleUserName.split(' ')[0]}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </motion.div>
+
     </motion.div>
   );
 };

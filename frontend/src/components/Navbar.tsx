@@ -52,7 +52,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentUser, onSwitchUser, onRep
             <span className="font-medium">MobileNetV3 PyTorch</span>
           </div>
           <span className="text-[#D8C9AE]">|</span>
-          <div className="flex items-center gap-1.5 text-[#77766E] font-sans" title="Production model trained on industrial castings">
+          <div className="flex items-center gap-1.5 text-[#77766E] font-sans" title="Production model trained on industrial steel surfaces">
             <AlertCircle className="w-3.5 h-3.5 text-[#C49A52] shrink-0" />
             <span>Inference: <strong className="text-[#292A26] font-mono font-semibold">v1.0-PROD</strong> (Grad-CAM Enabled)</span>
           </div>

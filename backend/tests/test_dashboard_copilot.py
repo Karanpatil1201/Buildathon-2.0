@@ -21,6 +21,16 @@ def test_copilot_batch_summary_with_citations(client, admin_token):
     assert data["grounded_stats"]["batch_number"] == "B-2026-104"
 
 def test_copilot_overdue_actions(client, admin_token):
+    from app.database import SessionLocal
+    from app.models import CorrectiveAction
+    from datetime import datetime, timedelta
+    with SessionLocal() as db:
+        act = db.query(CorrectiveAction).first()
+        if act:
+            act.status = "PENDING"
+            act.target_date = datetime.utcnow() - timedelta(days=2)
+            db.commit()
+
     headers = {"Authorization": f"Bearer {admin_token}"}
     res = client.post("/api/v1/copilot/query", json={"query": "Which corrective actions are overdue?"}, headers=headers)
     assert res.status_code == 200

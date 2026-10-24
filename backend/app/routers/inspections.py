@@ -17,6 +17,7 @@ from app.schemas import InspectionCreate, InspectionOut, InspectionDetailOut, In
 from app.auth import get_current_user
 from app.config import settings
 from app.ml.classifier import ml_engine
+from app.ml.domain_gate import domain_gate
 
 router = APIRouter(prefix="/inspections", tags=["Inspections"])
 
@@ -44,6 +45,8 @@ def _format_inspection_out(insp: Inspection) -> InspectionOut:
         batch_number=insp.batch.batch_number if insp.batch else None,
         inspector_name=insp.inspector.full_name if insp.inspector else None,
         latest_prediction=latest_inf.raw_prediction if latest_inf else None,
+        latest_defect_type=getattr(latest_inf, "defect_type", None) if latest_inf else None,
+        latest_defect_name=getattr(latest_inf, "defect_display_name", None) if latest_inf else None,
         latest_confidence=latest_inf.confidence_score if latest_inf else None,
         latest_image_url=f"/api/v1/inspections/images/{latest_img.file_path}" if latest_img else None,
         latest_heatmap_url=f"/api/v1/inspections/images/{latest_img.heatmap_path}" if latest_img and latest_img.heatmap_path else None
@@ -84,7 +87,7 @@ def list_inspections(
 
 @router.get("/eval-samples")
 def list_eval_samples():
-    """Returns the list of authentic held-out casting samples for 1-click test inspections."""
+    """Returns the list of authentic held-out steel surface samples for 1-click test inspections."""
     manifest_path = settings.EVAL_SAMPLES_DIR / "samples_manifest.json"
     if manifest_path.exists():
         with open(manifest_path, "r") as f:
@@ -159,6 +162,25 @@ async def create_inspection_with_evidence(
 
     sha256 = hashlib.sha256(file_bytes).hexdigest()
 
+    # Validated Domain & Out-of-Distribution (OOD) Gate: Reject non-steel / unsupported images
+    is_supported, rej_code, rej_reason, domain_diag = domain_gate.validate_image(dest_path, ml_engine)
+    if not is_supported:
+        if dest_path.exists() and not sample_preset:
+            try:
+                dest_path.unlink()
+            except Exception:
+                pass
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "UNSUPPORTED_IMAGE_DOMAIN",
+                "message": "Unsupported image. Please upload a suitable industrial steel surface / metal sheet image.",
+                "rejection_code": rej_code,
+                "reason": rej_reason,
+                "diagnostics": domain_diag
+            }
+        )
+
     # Create Inspection record
     inspection = Inspection(
         product_id=product_id,
@@ -203,6 +225,9 @@ async def create_inspection_with_evidence(
         model_version=ml_result["model_version"],
         inference_duration_ms=ml_result["inference_duration_ms"],
         raw_prediction=ml_result["prediction"],
+        defect_type=ml_result.get("defect_type"),
+        defect_display_name=ml_result.get("defect_display_name"),
+        class_probabilities=json.dumps(ml_result.get("class_probabilities", {})),
         confidence_score=ml_result["confidence_score"],
         defect_probability=ml_result["defect_probability"],
         status=ml_result["status"],
@@ -229,7 +254,7 @@ async def create_inspection_with_evidence(
 
     return get_inspection_detail(inspection.id, db)
 
-def _format_inspection_detail(insp: Inspection) -> InspectionDetailOut:
+def _format_inspection_detail(insp: Inspection, original_inspection: Optional[InspectionOut] = None, follow_up_inspections: Optional[List[InspectionOut]] = None) -> InspectionDetailOut:
     base_out = _format_inspection_out(insp)
     
     images_out = [
@@ -255,6 +280,9 @@ def _format_inspection_detail(insp: Inspection) -> InspectionDetailOut:
             model_version=att.model_version,
             inference_duration_ms=att.inference_duration_ms,
             raw_prediction=att.raw_prediction,
+            defect_type=att.defect_type,
+            defect_display_name=att.defect_display_name,
+            class_probabilities=att.class_probabilities,
             confidence_score=att.confidence_score,
             defect_probability=att.defect_probability,
             status=att.status,
@@ -284,7 +312,9 @@ def _format_inspection_detail(insp: Inspection) -> InspectionDetailOut:
         images=images_out,
         inference_attempts=attempts_out,
         reviews=reviews_out,
-        defect=defect_out
+        defect=defect_out,
+        original_inspection=original_inspection,
+        follow_up_inspections=follow_up_inspections or []
     )
 
 def get_inspection_detail(inspection_id: int, db: Session, current_user: Optional[User] = None) -> InspectionDetailOut:
@@ -306,7 +336,16 @@ def get_inspection_detail(inspection_id: int, db: Session, current_user: Optiona
                     detail="Access denied: Operators may only access inspection records they created."
                 )
 
-    return _format_inspection_detail(insp)
+    orig_out = None
+    if insp.original_inspection_id:
+        orig = db.query(Inspection).filter(Inspection.id == insp.original_inspection_id).first()
+        if orig:
+            orig_out = _format_inspection_out(orig)
+
+    follow_ups = db.query(Inspection).filter(Inspection.original_inspection_id == insp.id).order_by(Inspection.created_at.desc()).all()
+    follow_ups_out = [_format_inspection_out(f) for f in follow_ups]
+
+    return _format_inspection_detail(insp, original_inspection=orig_out, follow_up_inspections=follow_ups_out)
 
 @router.get("/{inspection_id}", response_model=InspectionDetailOut)
 def read_inspection_detail(
@@ -343,6 +382,9 @@ def retry_inference(
         model_version=ml_result["model_version"],
         inference_duration_ms=ml_result["inference_duration_ms"],
         raw_prediction=ml_result["prediction"],
+        defect_type=ml_result.get("defect_type"),
+        defect_display_name=ml_result.get("defect_display_name"),
+        class_probabilities=json.dumps(ml_result.get("class_probabilities", {})),
         confidence_score=ml_result["confidence_score"],
         defect_probability=ml_result["defect_probability"],
         status=ml_result["status"],

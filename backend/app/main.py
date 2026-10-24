@@ -54,7 +54,7 @@ def health_check():
         "status": "healthy",
         "service": settings.PROJECT_NAME,
         "version": settings.VERSION,
-        "ml_engine": "MobileNetV3-Casting-Inspector (Operational)",
+        "ml_engine": "MobileNetV3-Steel-Inspector (Operational)",
         "copilot": "Grounded Quality Copilot (Operational)"
     }
 

@@ -149,6 +149,9 @@ class InferenceAttemptOut(BaseModel):
     model_version: str
     inference_duration_ms: float
     raw_prediction: str
+    defect_type: Optional[str] = None
+    defect_display_name: Optional[str] = None
+    class_probabilities: Optional[str] = None
     confidence_score: float
     defect_probability: float
     status: str
@@ -272,6 +275,8 @@ class InspectionOut(BaseModel):
     batch_number: Optional[str] = None
     inspector_name: Optional[str] = None
     latest_prediction: Optional[str] = None
+    latest_defect_type: Optional[str] = None
+    latest_defect_name: Optional[str] = None
     latest_confidence: Optional[float] = None
     latest_image_url: Optional[str] = None
     latest_heatmap_url: Optional[str] = None
@@ -284,6 +289,8 @@ class InspectionDetailOut(InspectionOut):
     inference_attempts: List[InferenceAttemptOut] = []
     reviews: List[HumanReviewOut] = []
     defect: Optional[ConfirmedDefectOut] = None
+    original_inspection: Optional[InspectionOut] = None
+    follow_up_inspections: List[InspectionOut] = []
 
 # ----------------- Dashboard & Metrics -----------------
 class TrendPoint(BaseModel):

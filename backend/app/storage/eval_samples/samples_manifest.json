@@ -2,73 +2,73 @@
   {
     "filename": "eval_sample_defective_01.jpeg",
     "ground_truth": "DEFECTIVE",
-    "source": "cast_def_0_1059.jpeg",
-    "description": "Industrial casting with surface defect (Sample 1)"
+    "source": "crazing_241.jpg",
+    "description": "Hot-Rolled Steel Strip with Crazing (Microcracks)"
   },
   {
     "filename": "eval_sample_defective_02.jpeg",
     "ground_truth": "DEFECTIVE",
-    "source": "cast_def_0_1063.jpeg",
-    "description": "Industrial casting with surface defect (Sample 2)"
+    "source": "inclusion_241.jpg",
+    "description": "Steel Sheet with Non-Metallic Inclusions"
   },
   {
     "filename": "eval_sample_defective_03.jpeg",
     "ground_truth": "DEFECTIVE",
-    "source": "cast_def_0_108.jpeg",
-    "description": "Industrial casting with surface defect (Sample 3)"
+    "source": "patches_241.jpg",
+    "description": "Hot-Rolled Steel with Surface Patches"
   },
   {
     "filename": "eval_sample_defective_04.jpeg",
     "ground_truth": "DEFECTIVE",
-    "source": "cast_def_0_1096.jpeg",
-    "description": "Industrial casting with surface defect (Sample 4)"
+    "source": "pitted_surface_241.jpg",
+    "description": "Steel Strip with Pitted Surface Cavities"
   },
   {
     "filename": "eval_sample_defective_05.jpeg",
     "ground_truth": "DEFECTIVE",
-    "source": "cast_def_0_112.jpeg",
-    "description": "Industrial casting with surface defect (Sample 5)"
+    "source": "rolled-in_scale_241.jpg",
+    "description": "Steel Coil with Embedded Rolled-in Scale"
   },
   {
     "filename": "eval_sample_defective_06.jpeg",
     "ground_truth": "DEFECTIVE",
-    "source": "cast_def_0_1134.jpeg",
-    "description": "Industrial casting with surface defect (Sample 6)"
+    "source": "scratches_241.jpg",
+    "description": "Steel Sheet with Linear Scratches & Abrasions"
   },
   {
     "filename": "eval_sample_ok_01.jpeg",
     "ground_truth": "OK",
-    "source": "cast_ok_0_10.jpeg",
-    "description": "Industrial casting with flawless surface (Sample 1)"
+    "source": "normal_1d3b3b762_part0.png",
+    "description": "Flawless Hot-Rolled Steel Surface - Normal (Sample 1)"
   },
   {
     "filename": "eval_sample_ok_02.jpeg",
     "ground_truth": "OK",
-    "source": "cast_ok_0_1001.jpeg",
-    "description": "Industrial casting with flawless surface (Sample 2)"
+    "source": "normal_1d3b3b762_part1.png",
+    "description": "Flawless Hot-Rolled Steel Surface - Normal (Sample 2)"
   },
   {
     "filename": "eval_sample_ok_03.jpeg",
     "ground_truth": "OK",
-    "source": "cast_ok_0_1002.jpeg",
-    "description": "Industrial casting with flawless surface (Sample 3)"
+    "source": "normal_2c66fb097_part0.png",
+    "description": "Flawless Hot-Rolled Steel Surface - Normal (Sample 3)"
   },
   {
     "filename": "eval_sample_ok_04.jpeg",
     "ground_truth": "OK",
-    "source": "cast_ok_0_1003.jpeg",
-    "description": "Industrial casting with flawless surface (Sample 4)"
+    "source": "normal_2c66fb097_part1.png",
+    "description": "Flawless Hot-Rolled Steel Surface - Normal (Sample 4)"
   },
   {
     "filename": "eval_sample_ok_05.jpeg",
     "ground_truth": "OK",
-    "source": "cast_ok_0_1019.jpeg",
-    "description": "Industrial casting with flawless surface (Sample 5)"
+    "source": "normal_31ef144f8_part0.png",
+    "description": "Flawless Hot-Rolled Steel Surface - Normal (Sample 5)"
   },
   {
     "filename": "eval_sample_ok_06.jpeg",
     "ground_truth": "OK",
-    "source": "cast_ok_0_1020.jpeg",
-    "description": "Industrial casting with flawless surface (Sample 6)"
+    "source": "normal_31ef144f8_part1.png",
+    "description": "Flawless Hot-Rolled Steel Surface - Normal (Sample 6)"
   }
 ]

@@ -68,7 +68,10 @@ export interface InferenceAttempt {
   model_name: string;
   model_version: string;
   inference_duration_ms: number;
-  raw_prediction: 'DEFECTIVE' | 'OK' | 'UNKNOWN';
+  raw_prediction: 'DEFECTIVE' | 'OK' | 'UNKNOWN' | string;
+  defect_type?: string;
+  defect_display_name?: string;
+  class_probabilities?: string | Record<string, number>;
   confidence_score: number;
   defect_probability: number;
   status: 'SUCCESS' | 'FAILED';
@@ -136,7 +139,9 @@ export interface Inspection {
   product_name?: string;
   batch_number?: string;
   inspector_name?: string;
-  latest_prediction?: 'DEFECTIVE' | 'OK' | 'UNKNOWN';
+  latest_prediction?: 'DEFECTIVE' | 'OK' | 'UNKNOWN' | string;
+  latest_defect_type?: string;
+  latest_defect_name?: string;
   latest_confidence?: number;
   latest_image_url?: string;
   latest_heatmap_url?: string;
@@ -144,6 +149,8 @@ export interface Inspection {
   inference_attempts?: InferenceAttempt[];
   reviews?: HumanReview[];
   defect?: ConfirmedDefect;
+  original_inspection?: Inspection;
+  follow_up_inspections?: Inspection[];
 }
 
 export interface TrendPoint {

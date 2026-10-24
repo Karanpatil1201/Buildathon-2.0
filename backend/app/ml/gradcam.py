@@ -1,4 +1,4 @@
-import torch
+﻿import torch
 import torch.nn.functional as F
 import numpy as np
 import cv2
@@ -21,12 +21,20 @@ class GradCAM:
     def _save_gradient(self, module, grad_input, grad_output):
         self.gradients = grad_output[0]
 
-    def generate_heatmap(self, input_tensor, original_image_path, output_heatmap_path):
+    def generate_heatmap(self, input_tensor, original_image_path, output_heatmap_path, target_class_idx=None):
         self.model.eval()
         self.model.zero_grad()
 
         output = self.model(input_tensor)
-        score = output[0, 0]
+        if target_class_idx is None:
+            if output.dim() == 2 and output.shape[1] > 1:
+                target_class_idx = int(torch.argmax(output[0]))
+                score = output[0, target_class_idx]
+            else:
+                score = output[0, 0]
+        else:
+            score = output[0, target_class_idx]
+
         score.backward(retain_graph=True)
 
         if self.gradients is None or self.activations is None:

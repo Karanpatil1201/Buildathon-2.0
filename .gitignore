@@ -51,6 +51,10 @@ backend/app/storage/uploads/*
 *.backup
 *.backup.*
 
+# Large intermediate training weights (unused in production)
+backend/app/ml/weights/keras_weights.npz
+backend/app/ml/weights/neu_seven_class_pytorch.pth
+
 # OS & IDE
 .DS_Store
 Thumbs.db
@@ -58,4 +62,5 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
 

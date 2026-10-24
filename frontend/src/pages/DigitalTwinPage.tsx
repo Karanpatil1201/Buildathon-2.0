@@ -184,7 +184,7 @@ export const DigitalTwinPage: React.FC<DigitalTwinPageProps> = ({ metrics, onNav
             <span>Operational Notice: Model Weights Domain</span>
           </div>
           <p className="text-[11px] text-[#77766E] leading-snug">
-            Current live PyTorch weights (<code className="font-mono text-[11px] text-[#71845B] font-medium">casting_mobilenet_v3.pth</code>) are benchmarked on industrial casting baseline. Grad-CAM enabled.
+            Current live PyTorch weights (<code className="font-mono text-[11px] text-[#71845B] font-medium">casting_mobilenet_v3.pth</code>) are benchmarked on hot-rolled steel surface baseline. Grad-CAM enabled.
           </p>
         </div>
       </div>

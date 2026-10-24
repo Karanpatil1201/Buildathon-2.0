@@ -30,7 +30,7 @@ def test_create_inspection_with_preset_sample_runs_real_ml(client, inspector_tok
     assert len(detail["inference_attempts"]) >= 1
 
     latest_inf = detail["inference_attempts"][0]
-    assert latest_inf["model_name"] == "MobileNetV3-Casting-Inspector"
+    assert latest_inf["model_name"] == "MobileNetV3-Steel-Inspector"
     assert latest_inf["model_version"] == "v1.0.0-industrial"
     assert latest_inf["status"] == "SUCCESS"
     assert latest_inf["raw_prediction"] in ["DEFECTIVE", "OK"]

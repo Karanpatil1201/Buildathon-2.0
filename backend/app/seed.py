@@ -203,7 +203,7 @@ def seed_database(db: Session):
     inf1 = InferenceAttempt(
         inspection_id=insp1.id,
         image_id=img1.id,
-        model_name="MobileNetV3-Casting-Inspector",
+        model_name="MobileNetV3-Steel-Inspector",
         model_version="v1.0.0-industrial",
         inference_duration_ms=48.2,
         raw_prediction="DEFECTIVE",
@@ -288,7 +288,7 @@ def seed_database(db: Session):
     inf2 = InferenceAttempt(
         inspection_id=insp2.id,
         image_id=img2.id,
-        model_name="MobileNetV3-Casting-Inspector",
+        model_name="MobileNetV3-Steel-Inspector",
         model_version="v1.0.0-industrial",
         inference_duration_ms=44.1,
         raw_prediction="OK",
@@ -345,7 +345,7 @@ def seed_database(db: Session):
     inf3 = InferenceAttempt(
         inspection_id=insp3.id,
         image_id=img3.id,
-        model_name="MobileNetV3-Casting-Inspector",
+        model_name="MobileNetV3-Steel-Inspector",
         model_version="v1.0.0-industrial",
         inference_duration_ms=46.5,
         raw_prediction="DEFECTIVE",

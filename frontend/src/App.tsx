@@ -22,6 +22,33 @@ export const App: React.FC = () => {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [selectedInspectionId, setSelectedInspectionId] = useState<number | null>(null);
   const [targetDefectId, setTargetDefectId] = useState<number | null>(null);
+  const [reinspectionContext, setReinspectionContext] = useState<{
+    originalInspectionId: number;
+    productId: number;
+    batchId: number;
+    itemIdentifier: string;
+    defectType?: string;
+    defectCategory?: string;
+  } | null>(null);
+
+  const handleStartReinspection = (
+    originalInspectionId: number,
+    productId: number,
+    batchId: number,
+    itemIdentifier: string,
+    defectType?: string,
+    defectCategory?: string
+  ) => {
+    setReinspectionContext({
+      originalInspectionId,
+      productId,
+      batchId,
+      itemIdentifier,
+      defectType,
+      defectCategory
+    });
+    setActiveTab('new_inspection');
+  };
   
   // Opening animation state: auto-play on initial visit
   const [showIntro, setShowIntro] = useState<boolean>(() => {
@@ -128,6 +155,8 @@ export const App: React.FC = () => {
               metrics={metrics}
               onNavigate={(tab) => setActiveTab(tab)}
               onViewInspection={handleViewInspection}
+              currentUser={currentUser}
+              onSwitchUser={handleSwitchUser}
             />
           )}
 
@@ -149,6 +178,8 @@ export const App: React.FC = () => {
             hasPermission(currentUser, PERM_INSPECTION_CREATE) ? (
               <NewInspectionPage
                 onInspectionCreated={handleInspectionCreated}
+                reinspectionContext={reinspectionContext}
+                onClearReinspection={() => setReinspectionContext(null)}
               />
             ) : (
               <AccessDenied
@@ -167,6 +198,8 @@ export const App: React.FC = () => {
                 selectedInspectionId={selectedInspectionId}
                 onNavigateToActions={handleNavigateToActions}
                 onRefreshMetrics={fetchMetrics}
+                onStartReinspection={handleStartReinspection}
+                onViewInspection={handleViewInspection}
               />
             ) : (
               <AccessDenied
@@ -183,9 +216,7 @@ export const App: React.FC = () => {
             <DefectsActionsPage
               currentUser={currentUser}
               targetDefectId={targetDefectId}
-              onStartReinspection={(_origId, _pId, _bId, _item) => {
-                setActiveTab('new_inspection');
-              }}
+              onStartReinspection={handleStartReinspection}
               onRefreshMetrics={fetchMetrics}
             />
           )}

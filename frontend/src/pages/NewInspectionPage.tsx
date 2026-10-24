@@ -3,11 +3,22 @@ import { Camera, Upload, Cpu, RefreshCw, ArrowRight, Image as ImageIcon, Flame, 
 import { Product, Batch, EvalSample, Inspection } from '../types';
 import { api } from '../api/client';
 
-interface NewInspectionPageProps {
-  onInspectionCreated: (inspectionId: number) => void;
+export interface ReinspectionContext {
+  originalInspectionId: number;
+  productId: number;
+  batchId: number;
+  itemIdentifier: string;
+  defectType?: string;
+  defectCategory?: string;
 }
 
-export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspectionCreated }) => {
+interface NewInspectionPageProps {
+  onInspectionCreated: (inspectionId: number) => void;
+  reinspectionContext?: ReinspectionContext | null;
+  onClearReinspection?: () => void;
+}
+
+export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspectionCreated, reinspectionContext, onClearReinspection }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [evalSamples, setEvalSamples] = useState<EvalSample[]>([]);
@@ -27,6 +38,16 @@ export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspecti
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resultInspection, setResultInspection] = useState<Inspection | null>(null);
+  const [domainRejection, setDomainRejection] = useState<any | null>(null);
+
+  useEffect(() => {
+    if (reinspectionContext) {
+      if (reinspectionContext.productId) setSelectedProductId(reinspectionContext.productId);
+      if (reinspectionContext.batchId) setSelectedBatchId(reinspectionContext.batchId);
+      setItemIdentifier(`${reinspectionContext.itemIdentifier}-RE`);
+      setNotes(`Follow-up Reinspection for Unit #${reinspectionContext.originalInspectionId} (Previous Finding: ${reinspectionContext.defectType || reinspectionContext.defectCategory || 'Defective'})`);
+    }
+  }, [reinspectionContext]);
 
   useEffect(() => {
     const init = async () => {
@@ -44,9 +65,15 @@ export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspecti
         if (prods.length > 0) setSelectedProductId(prods[0].id);
         if (bts.length > 0) setSelectedBatchId(bts[0].id);
 
-        // Auto-generate realistic item ID
-        const randId = Math.floor(1000 + Math.random() * 9000);
-        setItemIdentifier(`ITEM-${randId}`);
+        if (reinspectionContext) {
+          setSelectedProductId(reinspectionContext.productId);
+          setSelectedBatchId(reinspectionContext.batchId);
+          setItemIdentifier(`${reinspectionContext.itemIdentifier}-RE`);
+          setNotes(`Follow-up Reinspection for Unit #${reinspectionContext.originalInspectionId} (Previous Finding: ${reinspectionContext.defectType || reinspectionContext.defectCategory || 'Defective'})`);
+        } else {
+          const randId = Math.floor(1000 + Math.random() * 9000);
+          setItemIdentifier(`ITEM-${randId}`);
+        }
       } catch (err: any) {
         setError(err.message || 'Failed to initialize inspection form');
       } finally {
@@ -63,6 +90,7 @@ export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspecti
       setSelectedPreset(null);
       setPreviewUrl(URL.createObjectURL(file));
       setResultInspection(null);
+      setDomainRejection(null);
     }
   };
 
@@ -90,6 +118,11 @@ export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspecti
       formData.append('item_identifier', itemIdentifier);
       if (notes) formData.append('notes', notes);
 
+      if (reinspectionContext) {
+        formData.append('is_reinspection', 'true');
+        formData.append('original_inspection_id', reinspectionContext.originalInspectionId.toString());
+      }
+
       if (selectedPreset) {
         formData.append('sample_preset', selectedPreset);
       } else if (selectedFile) {
@@ -99,7 +132,11 @@ export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspecti
       const created = await api.createInspection(formData);
       setResultInspection(created);
     } catch (err: any) {
-      setError(err.message || 'Inspection inference failed');
+      if (err.status === 422 || err.data?.code === 'UNSUPPORTED_IMAGE_DOMAIN') {
+        setDomainRejection(err.data || { message: err.message });
+      } else {
+        setError(err.message || 'Inspection inference failed');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -147,7 +184,7 @@ export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspecti
           ACTIVE ENGINE
         </span>
         <span className="text-[#292A26] font-medium">
-          Production model checkpoint is calibrated on industrial castings (v1.0-PROD). Grad-CAM localization active for visual explainability.
+          Production model checkpoint is calibrated on hot-rolled steel strip & sheet surfaces (v1.0-PROD). Grad-CAM localization active for visual explainability.
         </span>
       </div>
 
@@ -158,10 +195,105 @@ export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspecti
         </div>
       )}
 
+      {domainRejection && (
+        <div className="p-4 bg-[rgba(201,121,88,0.12)] border-2 border-[#C97958] rounded-xl text-xs font-sans space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="font-mono font-bold text-[#FFFFFF] text-[10px] px-2 py-0.5 rounded bg-[#C97958] uppercase tracking-wide">
+                INPUT REJECTED • OUT OF DOMAIN
+              </span>
+              <span className="font-semibold text-sm text-[#292A26]">
+                Unsupported image. Please upload a suitable industrial steel surface / metal sheet image.
+              </span>
+            </div>
+            <button 
+              onClick={() => setDomainRejection(null)} 
+              className="text-[#C97958] font-bold px-2 py-1 hover:bg-[#C97958]/10 rounded cursor-pointer"
+            >
+              ✕ Dismiss
+            </button>
+          </div>
+          
+          <p className="text-[#555] text-xs leading-relaxed">
+            {domainRejection.reason || domainRejection.message || "Input does not conform to the supported steel surface domain characteristics."}
+          </p>
+
+          {domainRejection.diagnostics && (
+            <div className="flex flex-wrap gap-2 pt-1 font-mono text-[11px]">
+              <div className="px-2.5 py-1 rounded bg-[#FFFFFF] border border-[#C97958]/40 text-[#292A26]">
+                <span className="text-[#777]">Decision: </span>
+                <span className="font-bold text-[#C97958]">REJECTED (OOD)</span>
+              </div>
+              {domainRejection.diagnostics.mahalanobis_distance != null && (
+                <div className="px-2.5 py-1 rounded bg-[#FFFFFF] border border-[#C97958]/40 text-[#292A26]">
+                  <span className="text-[#777]">Mahalanobis Distance: </span>
+                  <span className="font-bold text-[#C97958]">{domainRejection.diagnostics.mahalanobis_distance}</span>
+                  <span className="text-[#888]"> (Max: {domainRejection.diagnostics.mahalanobis_threshold || 25.0})</span>
+                </div>
+              )}
+              {domainRejection.diagnostics.knn_distance != null && (
+                <div className="px-2.5 py-1 rounded bg-[#FFFFFF] border border-[#C97958]/40 text-[#292A26]">
+                  <span className="text-[#777]">Deep k-NN Dist: </span>
+                  <span className="font-bold text-[#C97958]">{domainRejection.diagnostics.knn_distance}</span>
+                  <span className="text-[#888]"> (Max: {domainRejection.diagnostics.knn_threshold || 65.0})</span>
+                </div>
+              )}
+              {domainRejection.diagnostics.optical?.mean_luminance != null && (
+                <div className="px-2.5 py-1 rounded bg-[#FFFFFF] border border-[#C97958]/40 text-[#292A26]">
+                  <span className="text-[#777]">Luminance: </span>
+                  <span className="font-bold">{domainRejection.diagnostics.optical.mean_luminance}</span>
+                  <span className="text-[#888]"> [40, 230]</span>
+                </div>
+              )}
+              {domainRejection.diagnostics.optical?.contrast_std != null && (
+                <div className="px-2.5 py-1 rounded bg-[#FFFFFF] border border-[#C97958]/40 text-[#292A26]">
+                  <span className="text-[#777]">Contrast Std: </span>
+                  <span className="font-bold">{domainRejection.diagnostics.optical.contrast_std}</span>
+                  <span className="text-[#888]"> (Min: 12.0)</span>
+                </div>
+              )}
+              {domainRejection.diagnostics.optical?.laplacian_variance != null && (
+                <div className="px-2.5 py-1 rounded bg-[#FFFFFF] border border-[#C97958]/40 text-[#292A26]">
+                  <span className="text-[#777]">Laplacian Var: </span>
+                  <span className="font-bold">{domainRejection.diagnostics.optical.laplacian_variance}</span>
+                  <span className="text-[#888]"> (Min: 15.0)</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Main Grid: Form / Presets on Left, Results on Right */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* Left: Inspection Form & Sample Picker (7 Cols) */}
         <div className="lg:col-span-7 space-y-4">
+          {reinspectionContext && (
+            <div className="p-4 bg-[rgba(196,154,82,0.12)] border-2 border-[#C49A52] rounded-xl flex items-center justify-between text-xs font-sans shadow-sm">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono font-bold text-[10px] uppercase px-2 py-0.5 rounded bg-[#C49A52] text-white">
+                    FOLLOW-UP REINSPECTION MODE
+                  </span>
+                  <span className="font-bold text-[#292A26]">
+                    Directly Linked to Failed Inspection #{reinspectionContext.originalInspectionId}
+                  </span>
+                </div>
+                <p className="text-[#77766E] text-xs">
+                  Target Component: <strong className="text-[#292A26] font-mono">{reinspectionContext.itemIdentifier}</strong> | Initial Failure: <strong className="text-[#C97958] font-mono">{reinspectionContext.defectType || reinspectionContext.defectCategory || 'Defective'}</strong>
+                </p>
+              </div>
+              {onClearReinspection && (
+                <button
+                  type="button"
+                  onClick={onClearReinspection}
+                  className="px-3 py-1.5 rounded-lg border border-[#D8C9AE] bg-[#FFFCF6] text-[#77766E] hover:text-[#292A26] text-xs font-semibold font-sans transition-all cursor-pointer shadow-2xs"
+                >
+                  Cancel Reinspection
+                </button>
+              )}
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="industrial-card p-5 space-y-4 shadow-sm">
             <h2 className="type-card-title text-[#292A26] mb-1 font-semibold">1. Inspection Parameters</h2>
 
@@ -278,9 +410,9 @@ export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspecti
               <div>
                 <h3 className="text-sm font-semibold text-[#292A26] font-sans flex items-center gap-1.5">
                   <Flame className="w-4 h-4 text-[#71845B]" />
-                  Authentic Casting Test Samples
+                  Authentic Steel Surface Test Samples
                 </h3>
-                <p className="text-xs text-[#77766E] font-sans">12 held-out evaluation images from industrial casting dataset</p>
+                <p className="text-xs text-[#77766E] font-sans">12 held-out evaluation images from NEU steel surface defect dataset</p>
               </div>
               <button
                 type="button"
@@ -357,12 +489,13 @@ export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspecti
               {/* Real ML Results Breakdown */}
               {resultInspection && latestInference && (
                 <div className="p-4 bg-[#F0EAE1] border border-[#D8C9AE] rounded-xl space-y-3.5">
+                  {/* Top Status & Subject Signoff */}
                   <div className="flex items-center justify-between pb-2 border-b border-[#D8C9AE]">
                     <div>
                       <span className="text-[11px] text-[#77766E] uppercase font-sans font-semibold tracking-wider block">
                         AI Model Suggestion
                       </span>
-                      <span className="text-xs font-sans text-[#77766E]">Subject to Human Sign-Off</span>
+                      <span className="text-xs font-sans text-[#77766E]">Auditable Neural Inspection</span>
                     </div>
                     <span className={`text-xs font-semibold font-sans uppercase tracking-wider px-3 py-1 rounded-full border ${
                       latestInference.raw_prediction === 'DEFECTIVE'
@@ -371,6 +504,41 @@ export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspecti
                     }`}>
                       {latestInference.raw_prediction}
                     </span>
+                  </div>
+
+                  {/* Primary Defect Classification Feature Box */}
+                  <div className={`p-3.5 rounded-xl border flex items-center justify-between ${
+                    latestInference.raw_prediction === 'DEFECTIVE'
+                      ? 'bg-[rgba(201,121,88,0.08)] border-[#C97958]/35'
+                      : 'bg-[rgba(113,132,91,0.08)] border-[#71845B]/30'
+                  }`}>
+                    <div>
+                      <span className="text-[10px] text-[#77766E] uppercase font-mono font-bold tracking-wider block">
+                        Detected Defect Type
+                      </span>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="font-mono font-extrabold text-base tracking-tight text-[#292A26]">
+                          {latestInference.defect_type ? latestInference.defect_type.replace('_', ' ') : (latestInference.raw_prediction === 'DEFECTIVE' ? 'SURFACE DEFECT' : 'NORMAL (PRIME)')}
+                        </span>
+                        <span className={`text-[10px] font-sans px-2 py-0.5 rounded-full font-semibold border ${
+                          latestInference.raw_prediction === 'DEFECTIVE'
+                            ? 'bg-[#C97958] text-white border-transparent'
+                            : 'bg-[#71845B] text-white border-transparent'
+                        }`}>
+                          {latestInference.raw_prediction}
+                        </span>
+                      </div>
+                      <span className="text-xs text-[#77766E] font-sans mt-0.5 block">
+                        {latestInference.defect_display_name || (latestInference.raw_prediction === 'DEFECTIVE' ? 'Detected Surface Flaw' : 'Defect-Free Prime Steel')}
+                      </span>
+                    </div>
+
+                    <div className="text-right">
+                      <span className="text-[10px] text-[#77766E] uppercase font-mono block">Certainty</span>
+                      <span className="text-lg font-mono font-extrabold text-[#292A26]">
+                        {((latestInference.confidence_score || 0) * 100).toFixed(1)}%
+                      </span>
+                    </div>
                   </div>
 
                   {/* Traceability Metadata Strip */}
@@ -411,6 +579,61 @@ export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspecti
                       </span>
                     </div>
                   </div>
+
+                  {/* 7-Class Neural Taxonomy Distribution */}
+                  {(() => {
+                    let parsedProbs: Record<string, number> = {};
+                    try {
+                      if (typeof latestInference.class_probabilities === 'string') {
+                        parsedProbs = JSON.parse(latestInference.class_probabilities);
+                      } else if (latestInference.class_probabilities) {
+                        parsedProbs = latestInference.class_probabilities as Record<string, number>;
+                      }
+                    } catch (e) {}
+
+                    const entries = Object.entries(parsedProbs).sort((a, b) => b[1] - a[1]);
+                    if (entries.length === 0) return null;
+
+                    return (
+                      <div className="p-3 bg-[#FFFCF6] border border-[#D8C9AE] rounded-xl space-y-2 text-xs font-sans">
+                        <div className="flex items-center justify-between pb-1 border-b border-[#D8C9AE]/60">
+                          <span className="text-[11px] font-mono font-bold uppercase text-[#77766E] tracking-wider">
+                            Model Defect Taxonomy Distribution
+                          </span>
+                          <span className="text-[10px] font-mono text-[#71845B] font-semibold">
+                            7-Class Head
+                          </span>
+                        </div>
+                        <div className="space-y-1.5 pt-0.5">
+                          {entries.map(([cls, prob]) => {
+                            const isWinner = cls === (latestInference.defect_type?.toLowerCase().replace('_', '-') ?? '') || (cls === 'rolled-in_scale' && latestInference.defect_type === 'ROLLED_IN_SCALE');
+                            return (
+                              <div key={cls} className="space-y-0.5">
+                                <div className="flex items-center justify-between text-[11px] font-mono">
+                                  <span className={`capitalize ${isWinner ? 'font-bold text-[#292A26]' : 'text-[#77766E]'}`}>
+                                    {cls.replace('_', ' ').replace('-', ' ')}
+                                  </span>
+                                  <span className={`font-semibold ${isWinner ? 'text-[#C97958] font-bold' : 'text-[#77766E]'}`}>
+                                    {(prob * 100).toFixed(1)}%
+                                  </span>
+                                </div>
+                                <div className="h-1.5 w-full bg-[#E8DEC8] rounded-full overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full transition-all duration-500 ${
+                                      cls === 'normal'
+                                        ? 'bg-[#71845B]'
+                                        : isWinner ? 'bg-[#C97958]' : 'bg-[#D8C9AE]'
+                                    }`}
+                                    style={{ width: `${Math.max(prob * 100, prob > 0 ? 3 : 0)}%` }}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Grad-CAM Heatmap Preview & Explicit Explainability Disclaimer */}
                   {latestImage?.heatmap_path && (
