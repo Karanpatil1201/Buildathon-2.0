@@ -113,6 +113,12 @@ def record_batch_decision(
     if decision_in.new_status not in valid_statuses:
         raise HTTPException(status_code=400, detail=f"Invalid batch status. Allowed: {valid_statuses}")
 
+    if not decision_in.reason or not decision_in.reason.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A documented justification reason is required for batch status decisions."
+        )
+
     # RBAC check: Quarantine requires batch:quarantine, Release requires batch:release
     if decision_in.new_status in ["ON_HOLD", "REJECTED"]:
         if not has_permission(current_user.role, PERM_BATCH_QUARANTINE):
@@ -164,7 +170,11 @@ def record_batch_decision(
     return _format_batch_out(batch, db)
 
 @router.get("/{batch_id}/decisions", response_model=List[BatchDecisionOut])
-def get_batch_decision_history(batch_id: int, db: Session = Depends(get_db)):
+def get_batch_decision_history(
+    batch_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions(PERM_BATCH_READ))
+):
     decisions = db.query(BatchDecision).filter(BatchDecision.batch_id == batch_id).order_by(BatchDecision.created_at.desc()).all()
     results = []
     for d in decisions:

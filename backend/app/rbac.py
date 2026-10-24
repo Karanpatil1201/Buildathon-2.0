@@ -6,16 +6,18 @@ from app.models import User
 class Role(str, Enum):
     PRODUCTION_OPERATOR = "production_operator"
     QUALITY_INSPECTOR = "quality_inspector"
+    PRODUCTION_SUPERVISOR = "production_supervisor"
     QUALITY_MANAGER = "quality_manager"
     SYSTEM_ADMIN = "system_admin"
 
-# Normalization mapping for backward compatibility with existing databases and tests
+# Normalization mapping for canonical and backward-compatible role strings
 ROLE_ALIASES: Dict[str, Role] = {
     "operator": Role.PRODUCTION_OPERATOR,
     "production_operator": Role.PRODUCTION_OPERATOR,
-    "supervisor": Role.PRODUCTION_OPERATOR,  # Production supervisor operating on the line
     "inspector": Role.QUALITY_INSPECTOR,
     "quality_inspector": Role.QUALITY_INSPECTOR,
+    "supervisor": Role.PRODUCTION_SUPERVISOR,
+    "production_supervisor": Role.PRODUCTION_SUPERVISOR,
     "quality_manager": Role.QUALITY_MANAGER,
     "qm": Role.QUALITY_MANAGER,
     "admin": Role.SYSTEM_ADMIN,
@@ -81,9 +83,10 @@ PERM_SYSTEM_CONFIG = "system:config"
 # -------------------------------------------------------------
 
 ROLE_PERMISSIONS: Dict[Role, Set[str]] = {
-    # 1. PRODUCTION OPERATOR
-    # Can upload images, run inference, view permitted records, view batches.
-    # CANNOT confirm defects, sign off quality decisions, or manage/verify CAPA.
+    # 1. PRODUCTION_OPERATOR
+    # Can create inspection drafts, upload/submit inspection evidence, enter observations,
+    # and view permitted records (their own authored records).
+    # CANNOT confirm defects, approve reinspection, close CAPA, or release batches.
     Role.PRODUCTION_OPERATOR: {
         PERM_INSPECTION_CREATE,
         PERM_INSPECTION_READ,
@@ -94,13 +97,13 @@ ROLE_PERMISSIONS: Dict[Role, Set[str]] = {
         PERM_CAPA_COMPLETE,  # Operator can mark an assigned remediation step completed
         PERM_BATCH_READ,
         PERM_BATCH_CREATE,
-        PERM_DASHBOARD_READ,
     },
 
-    # 2. QUALITY INSPECTOR
-    # Access review workbench and Grad-CAM evidence.
-    # Can confirm defects or mark no defect, request additional evidence.
-    # CANNOT manage users, change model config, or verify/close their own CAPA.
+    # 2. QUALITY_INSPECTOR
+    # Access assigned inspections, review AI results and Grad-CAM, confirm/correct defect
+    # classification with a reason, and record reinspection findings.
+    # CANNOT approve their own inspection (separation of duties), CANNOT perform manager-only
+    # CAPA closure/batch release.
     Role.QUALITY_INSPECTOR: {
         PERM_INSPECTION_CREATE,
         PERM_INSPECTION_READ,
@@ -120,10 +123,28 @@ ROLE_PERMISSIONS: Dict[Role, Set[str]] = {
         PERM_AUDIT_READ,
     },
 
-    # 3. QUALITY MANAGER
-    # Owns plant quality performance, defect containment, and CAPA governance.
-    # Full defect/CAPA/containment workflow authority.
-    # CANNOT grant administrator privileges or manage system accounts.
+    # 3. PRODUCTION_SUPERVISOR
+    # Access assigned production-line records, coordinate and update remediation tasks,
+    # upload completion evidence if supported, and request reinspection.
+    # CANNOT approve quality acceptance, close CAPA, or release batches.
+    Role.PRODUCTION_SUPERVISOR: {
+        PERM_INSPECTION_READ,
+        PERM_INSPECTION_READ_ALL,
+        PERM_DEFECT_READ,
+        PERM_CAPA_READ,
+        PERM_CAPA_UPDATE,
+        PERM_CAPA_COMPLETE,
+        PERM_BATCH_READ,
+        PERM_DASHBOARD_READ,
+        PERM_DASHBOARD_KPI,
+        PERM_REPORTS_READ,
+        PERM_AUDIT_READ,
+    },
+
+    # 4. QUALITY_MANAGER
+    # Plant-wide quality visibility, review defects and reinspection evidence, approve/reject
+    # correction effectiveness, manage CAPA, place batches on hold, and release batches after required checks.
+    # Require reasons for overrides.
     Role.QUALITY_MANAGER: {
         PERM_INSPECTION_CREATE,
         PERM_INSPECTION_READ,
@@ -154,10 +175,9 @@ ROLE_PERMISSIONS: Dict[Role, Set[str]] = {
         PERM_USERS_READ,  # Quality Manager can view users to populate CAPA assignee list
     },
 
-    # 4. SYSTEM ADMINISTRATOR
-    # Manages user accounts, role assignments, system settings, security logs.
-    # CRITICAL: Separated from Quality Authority. Does NOT automatically receive
-    # permission to approve defects, release batches, or verify/close CAPAs.
+    # 5. SYSTEM_ADMIN
+    # Manage users, roles, authentication/security configuration and security audit logs.
+    # CRITICAL: Do NOT automatically grant quality approval, CAPA closure or batch-release permissions.
     Role.SYSTEM_ADMIN: {
         PERM_USERS_READ,
         PERM_USERS_CREATE,

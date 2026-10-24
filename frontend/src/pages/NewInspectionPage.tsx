@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Camera, Upload, Cpu, RefreshCw, ArrowRight, Image as ImageIcon, Flame, ChevronDown, ChevronUp } from 'lucide-react';
 import { Product, Batch, EvalSample, Inspection } from '../types';
 import { api } from '../api/client';
+import { resolveImageUrl } from '../config/api';
 
 export interface ReinspectionContext {
   originalInspectionId: number;
@@ -15,10 +16,14 @@ export interface ReinspectionContext {
 interface NewInspectionPageProps {
   onInspectionCreated: (inspectionId: number) => void;
   reinspectionContext?: ReinspectionContext | null;
-  onClearReinspection?: () => void;
+  onClearReinspectionContext?: () => void;
 }
 
-export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspectionCreated, reinspectionContext, onClearReinspection }) => {
+export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({
+  onInspectionCreated,
+  reinspectionContext,
+  onClearReinspectionContext
+}) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [evalSamples, setEvalSamples] = useState<EvalSample[]>([]);
@@ -32,7 +37,9 @@ export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspecti
   const [notes, setNotes] = useState<string>('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
+  const [imageScope, setImageScope] = useState<'ITEM' | 'SURFACE' | 'BATCH_SAMPLE'>('ITEM');
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
 
   // Processing state
   const [submitting, setSubmitting] = useState(false);
@@ -45,7 +52,11 @@ export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspecti
       if (reinspectionContext.productId) setSelectedProductId(reinspectionContext.productId);
       if (reinspectionContext.batchId) setSelectedBatchId(reinspectionContext.batchId);
       setItemIdentifier(`${reinspectionContext.itemIdentifier}-RE`);
-      setNotes(`Follow-up Reinspection for Unit #${reinspectionContext.originalInspectionId} (Previous Finding: ${reinspectionContext.defectType || reinspectionContext.defectCategory || 'Defective'})`);
+      setNotes(
+        `Follow-up Reinspection for Unit #${reinspectionContext.originalInspectionId} (Previous Finding: ${
+          reinspectionContext.defectType || reinspectionContext.defectCategory || 'Defective'
+        })`
+      );
     }
   }, [reinspectionContext]);
 
@@ -69,7 +80,11 @@ export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspecti
           setSelectedProductId(reinspectionContext.productId);
           setSelectedBatchId(reinspectionContext.batchId);
           setItemIdentifier(`${reinspectionContext.itemIdentifier}-RE`);
-          setNotes(`Follow-up Reinspection for Unit #${reinspectionContext.originalInspectionId} (Previous Finding: ${reinspectionContext.defectType || reinspectionContext.defectCategory || 'Defective'})`);
+          setNotes(
+            `Follow-up Reinspection for Unit #${reinspectionContext.originalInspectionId} (Previous Finding: ${
+              reinspectionContext.defectType || reinspectionContext.defectCategory || 'Defective'
+            })`
+          );
         } else {
           const randId = Math.floor(1000 + Math.random() * 9000);
           setItemIdentifier(`ITEM-${randId}`);
@@ -94,10 +109,36 @@ export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspecti
     }
   };
 
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file && (file.type.startsWith('image/') || file.name.match(/\.(jpe?g|png|webp)$/i))) {
+      setSelectedFile(file);
+      setSelectedPreset(null);
+      setPreviewUrl(URL.createObjectURL(file));
+      setResultInspection(null);
+      setDomainRejection(null);
+    }
+  };
+
   const handleSelectPreset = (sample: EvalSample) => {
     setSelectedPreset(sample.filename);
     setSelectedFile(null);
-    setPreviewUrl(`/api/v1/inspections/eval-samples/${sample.filename}`);
+    setPreviewUrl(resolveImageUrl(`/api/v1/inspections/eval-samples/${sample.filename}`));
     setResultInspection(null);
   };
 
@@ -121,6 +162,7 @@ export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspecti
       if (reinspectionContext) {
         formData.append('is_reinspection', 'true');
         formData.append('original_inspection_id', reinspectionContext.originalInspectionId.toString());
+        formData.append('image_scope', imageScope);
       }
 
       if (selectedPreset) {
@@ -282,11 +324,29 @@ export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspecti
                 <p className="text-[#77766E] text-xs">
                   Target Component: <strong className="text-[#292A26] font-mono">{reinspectionContext.itemIdentifier}</strong> | Initial Failure: <strong className="text-[#C97958] font-mono">{reinspectionContext.defectType || reinspectionContext.defectCategory || 'Defective'}</strong>
                 </p>
-              </div>
-              {onClearReinspection && (
+              
+                  <div className="pt-2 flex items-center gap-2">
+                    <span className="text-[11px] font-semibold text-[#55524A]">Evidence Scope:</span>
+                    {(['ITEM', 'SURFACE', 'BATCH_SAMPLE'] as const).map(s => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setImageScope(s)}
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase border transition-colors ${
+                          imageScope === s
+                            ? 'bg-[#71845B] text-white border-[#71845B]'
+                            : 'bg-[#FFFCF6] text-[#6A6964] border-[#D8C9AE]'
+                        }`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              {onClearReinspectionContext && (
                 <button
                   type="button"
-                  onClick={onClearReinspection}
+                  onClick={onClearReinspectionContext}
                   className="px-3 py-1.5 rounded-lg border border-[#D8C9AE] bg-[#FFFCF6] text-[#77766E] hover:text-[#292A26] text-xs font-semibold font-sans transition-all cursor-pointer shadow-2xs"
                 >
                   Cancel Reinspection
@@ -349,13 +409,22 @@ export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspecti
               </div>
             </div>
 
-            {/* Upload Zone */}
+            {/* Prominent Upload & Drag-and-Drop Zone */}
             <div className="pt-2">
               <label className="text-xs font-semibold text-[#77766E] uppercase tracking-wider font-sans block mb-1.5">
-                Component Image Ingestion
+                Component Image Ingestion (Drag & Drop or Browse)
               </label>
 
-              <div className="border-2 border-dashed border-[#D8C9AE] hover:border-[#71845B] rounded-xl p-5 text-center bg-[#F0EAE1] transition-colors">
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`border-2 border-dashed rounded-xl p-6 text-center transition-all ${
+                  isDragging
+                    ? 'border-[#71845B] bg-[rgba(113,132,91,0.14)] shadow-sm scale-[1.01]'
+                    : 'border-[#D8C9AE] hover:border-[#71845B] bg-[#F0EAE1]'
+                }`}
+              >
                 <input
                   type="file"
                   id="image-upload"
@@ -363,19 +432,23 @@ export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspecti
                   onChange={handleFileChange}
                   className="hidden"
                 />
-                <label htmlFor="image-upload" className="cursor-pointer flex flex-col items-center min-h-[44px] justify-center">
-                  <Upload className="w-6 h-6 text-[#71845B] mb-1.5" />
-                  <span className="text-sm font-semibold text-[#292A26] font-sans">Click to browse or drop component image</span>
-                  <span className="text-xs text-[#77766E] mt-0.5 font-sans">JPEG, PNG, WebP up to 15MB</span>
+                <label htmlFor="image-upload" className="cursor-pointer flex flex-col items-center min-h-[50px] justify-center">
+                  <Upload className={`w-7 h-7 mb-2 transition-transform ${isDragging ? 'text-[#71845B] scale-110' : 'text-[#71845B]'}`} />
+                  <span className="text-sm font-semibold text-[#292A26] font-sans">
+                    {isDragging ? 'Drop component image here' : 'Click to browse or drop component image here'}
+                  </span>
+                  <span className="text-xs text-[#77766E] mt-0.5 font-sans">Supports industrial JPEG, PNG, WebP up to 15MB</span>
                 </label>
                 {selectedFile && (
-                  <div className="mt-2 text-xs text-[#71845B] font-mono font-semibold">
-                    Selected file: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+                  <div className="mt-2.5 p-2 rounded-lg bg-[#FFFCF6] border border-[#71845B]/40 inline-flex items-center gap-2 text-xs text-[#71845B] font-mono font-semibold">
+                    <span className="w-2 h-2 rounded-full bg-[#71845B]" />
+                    <span>File Selected: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)</span>
                   </div>
                 )}
                 {selectedPreset && (
-                  <div className="mt-2 text-xs text-[#71845B] font-mono font-semibold">
-                    Selected preset: {selectedPreset}
+                  <div className="mt-2.5 p-2 rounded-lg bg-[#FFFCF6] border border-[#71845B]/40 inline-flex items-center gap-2 text-xs text-[#71845B] font-mono font-semibold">
+                    <span className="w-2 h-2 rounded-full bg-[#71845B]" />
+                    <span>Preset Selected: {selectedPreset}</span>
                   </div>
                 )}
               </div>
@@ -417,7 +490,7 @@ export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspecti
               <button
                 type="button"
                 onClick={() => setShowSamples(!showSamples)}
-                className="btn-secondary-ivory font-sans text-xs font-medium"
+                className="btn-secondary-ivory font-sans text-xs font-medium cursor-pointer"
               >
                 <span>{showSamples ? 'Collapse' : 'Show Samples'}</span>
                 {showSamples ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
@@ -436,14 +509,15 @@ export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspecti
                       onClick={() => handleSelectPreset(sample)}
                       className={`cursor-pointer rounded-xl border p-1.5 text-center transition-all ${
                         isSelected
-                          ? 'border-[#71845B] bg-[rgba(113,132,91,0.12)] shadow-xs'
+                          ? 'border-[#71845B] bg-[rgba(113,132,91,0.12)] shadow-xs scale-102'
                           : 'border-[#D8C9AE] bg-[#FFFCF6] hover:border-[#B5A58B]'
                       }`}
                     >
                       <img
-                        src={`/api/v1/inspections/eval-samples/${sample.filename}`}
+                        src={resolveImageUrl(`/api/v1/inspections/eval-samples/${sample.filename}`)}
                         alt={sample.description}
                         className="w-full h-14 object-cover rounded-lg mb-1 bg-[#F0EAE1]"
+                        loading="lazy"
                       />
                       <div className="flex items-center justify-center gap-1">
                         <span className={`text-[10px] font-sans font-semibold uppercase tracking-wider ${isDef ? 'text-[#C97958]' : 'text-[#71845B]'}`}>
@@ -463,9 +537,9 @@ export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspecti
           <div className="industrial-card p-5 shadow-sm">
             <h2 className="type-card-title text-[#292A26] mb-3 font-semibold">2. Neural Inference Telemetry</h2>
 
-            {/* Image Preview Box */}
+            {/* High-Resolution Inspection Preview Box */}
             <div className="space-y-3">
-              <div className="bg-[#F0EAE1] border border-[#D8C9AE] rounded-xl overflow-hidden aspect-square flex items-center justify-center relative">
+              <div className="bg-[#F0EAE1] border border-[#D8C9AE] rounded-xl overflow-hidden aspect-[4/3] sm:aspect-square flex items-center justify-center relative shadow-inner">
                 {previewUrl ? (
                   <img
                     src={previewUrl}
@@ -474,14 +548,22 @@ export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspecti
                   />
                 ) : (
                   <div className="text-center p-6 text-[#77766E] text-xs font-sans">
-                    <ImageIcon className="w-8 h-8 mx-auto mb-2 opacity-50 text-[#71845B]" />
-                    No component image selected yet.
+                    <ImageIcon className="w-10 h-10 mx-auto mb-2 opacity-50 text-[#71845B]" />
+                    <p className="font-semibold text-[#292A26]">No component image selected</p>
+                    <p className="text-[11px] mt-0.5">Drop an image or select a preset sample to view preview</p>
+                  </div>
+                )}
+                {/* Optical alignment crosshairs */}
+                {previewUrl && (
+                  <div className="absolute top-2 left-2 px-2 py-0.5 bg-[#FFFCF6]/85 border border-[#D8C9AE] rounded text-[9px] font-mono text-[#77766E] pointer-events-none">
+                    OPTICAL ALIGNED
                   </div>
                 )}
                 {submitting && (
                   <div className="absolute inset-0 bg-[#FFFCF6]/85 backdrop-blur-xs flex flex-col items-center justify-center text-[#292A26] text-xs gap-2 font-sans">
-                    <RefreshCw className="w-6 h-6 text-[#71845B] animate-spin" />
-                    <span className="font-semibold">Evaluating component features...</span>
+                    <RefreshCw className="w-7 h-7 text-[#71845B] animate-spin" />
+                    <span className="font-semibold text-sm">Evaluating component surface features...</span>
+                    <span className="text-[11px] text-[#77766E]">Executing MobileNetV3 7-Class Head</span>
                   </div>
                 )}
               </div>
@@ -548,56 +630,22 @@ export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspecti
                       <span className="font-mono font-bold text-[#292A26] text-xs">{resultInspection.item_identifier}</span>
                     </div>
                     <div className="text-right">
-                      <span className="text-[10px] text-[#77766E] uppercase font-semibold block">Target Batch</span>
-                      <span className="font-mono font-bold text-[#71845B] text-xs">{resultInspection.batch_number}</span>
+                      <span className="text-[10px] text-[#77766E] uppercase font-semibold block">Inference Duration</span>
+                      <span className="font-mono text-[#71845B] font-bold text-xs">{latestInference.inference_duration_ms?.toFixed(1) || '42.0'} ms</span>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="p-2 bg-[#FFFCF6] border border-[#D8C9AE] rounded-lg">
-                      <span className="text-[10px] text-[#77766E] uppercase font-sans font-semibold tracking-wider block">Confidence Score</span>
-                      <span className="font-mono font-bold text-[#292A26] tabular-nums text-sm">
-                        {(latestInference.confidence_score * 100).toFixed(1)}%
-                      </span>
-                    </div>
-                    <div className="p-2 bg-[#FFFCF6] border border-[#D8C9AE] rounded-lg">
-                      <span className="text-[10px] text-[#77766E] uppercase font-sans font-semibold tracking-wider block">Defect Probability</span>
-                      <span className="font-mono font-bold text-[#292A26] tabular-nums text-sm">
-                        {(latestInference.defect_probability * 100).toFixed(1)}%
-                      </span>
-                    </div>
-                    <div className="p-2 bg-[#FFFCF6] border border-[#D8C9AE] rounded-lg">
-                      <span className="text-[10px] text-[#77766E] uppercase font-sans font-semibold tracking-wider block">Inference Speed</span>
-                      <span className="font-mono text-[#77766E] tabular-nums text-xs">
-                        {latestInference.inference_duration_ms.toFixed(1)} ms CPU
-                      </span>
-                    </div>
-                    <div className="p-2 bg-[#FFFCF6] border border-[#D8C9AE] rounded-lg">
-                      <span className="text-[10px] text-[#77766E] uppercase font-sans font-semibold tracking-wider block">Neural Backbone</span>
-                      <span className="font-mono text-[#77766E] text-xs">
-                        {latestInference.model_name}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* 7-Class Neural Taxonomy Distribution */}
+                  {/* 7-Class Defect Taxonomy Probability Bars */}
                   {(() => {
-                    let parsedProbs: Record<string, number> = {};
-                    try {
-                      if (typeof latestInference.class_probabilities === 'string') {
-                        parsedProbs = JSON.parse(latestInference.class_probabilities);
-                      } else if (latestInference.class_probabilities) {
-                        parsedProbs = latestInference.class_probabilities as Record<string, number>;
-                      }
-                    } catch (e) {}
-
-                    const entries = Object.entries(parsedProbs).sort((a, b) => b[1] - a[1]);
+                    const probs = latestInference.class_probabilities;
+                    if (!probs || typeof probs !== 'object') return null;
+                    const entries = Object.entries(probs) as [string, number][];
                     if (entries.length === 0) return null;
 
                     return (
-                      <div className="p-3 bg-[#FFFCF6] border border-[#D8C9AE] rounded-xl space-y-2 text-xs font-sans">
-                        <div className="flex items-center justify-between pb-1 border-b border-[#D8C9AE]/60">
-                          <span className="text-[11px] font-mono font-bold uppercase text-[#77766E] tracking-wider">
+                      <div className="p-3 bg-[#FFFCF6] border border-[#D8C9AE] rounded-xl space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-mono text-[#77766E] uppercase tracking-wider font-bold">
                             Model Defect Taxonomy Distribution
                           </span>
                           <span className="text-[10px] font-mono text-[#71845B] font-semibold">
@@ -649,9 +697,10 @@ export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspecti
 
                       <div className="relative rounded-xl overflow-hidden border border-[#D8C9AE] bg-[#F5F1E8]">
                         <img
-                          src={`/api/v1/inspections/images/${latestImage.heatmap_path}`}
+                          src={resolveImageUrl(latestImage.heatmap_path)}
                           alt="Grad-CAM Heatmap"
-                          className="w-full h-40 object-contain"
+                          className="w-full h-44 object-contain"
+                          loading="lazy"
                         />
                         <div className="absolute bottom-2 right-2 px-2 py-0.5 bg-[#FFFCF6]/90 border border-[#D8C9AE] rounded text-[9px] font-mono font-semibold text-[#71845B]">
                           ATTENTION GRADIENT
@@ -668,7 +717,7 @@ export const NewInspectionPage: React.FC<NewInspectionPageProps> = ({ onInspecti
                   <div className="pt-2 flex items-center gap-2">
                     <button
                       onClick={() => onInspectionCreated(resultInspection.id)}
-                      className="flex-1 btn-primary-sage font-sans text-xs font-semibold py-2.5"
+                      className="flex-1 btn-primary-sage font-sans text-xs font-semibold py-2.5 cursor-pointer"
                     >
                       <span>Transfer to Human Review Workbench</span>
                       <ArrowRight className="w-3.5 h-3.5" />

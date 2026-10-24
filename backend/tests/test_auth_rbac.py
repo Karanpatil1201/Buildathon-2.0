@@ -30,6 +30,7 @@ def test_unauthenticated_access_returns_401(client):
     assert client.get("/api/v1/batches").status_code == 401
     assert client.get("/api/v1/actions").status_code == 401
     assert client.get("/api/v1/defects").status_code == 401
+    assert client.get("/api/v1/dashboard/metrics").status_code == 401
     assert client.post("/api/v1/reviews/1", json={"decision": "PASSED"}).status_code == 401
 
 # 2. Operator can create an inspection but cannot confirm its quality disposition
@@ -230,3 +231,284 @@ def test_unauthorized_direct_api_calls_rejected(client, operator_token):
     )
     assert action_post.status_code == 403
     assert "capa:create" in action_post.json()["detail"]
+
+    # Operator directly calling GET /dashboard/metrics -> BLOCKED (403)
+    dashboard_res = client.get("/api/v1/dashboard/metrics", headers=headers)
+    assert dashboard_res.status_code == 403
+    assert "dashboard:read" in dashboard_res.json()["detail"]
+
+# 11. Reinspection comparison endpoint returns triad and honest assessment
+def test_reinspection_comparison_triad(client, qm_token):
+    headers = {"Authorization": f"Bearer {qm_token}"}
+    res = client.get("/api/v1/inspections/1/reinspection-comparison", headers=headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert "original_inspection" in data
+    assert "reference_image" in data
+    assert "assessment_outcome" in data
+    assert data["requires_human_approval"] is True
+
+
+
+# 12. Production Supervisor permissions and strict boundary enforcement
+def test_production_supervisor_permissions_and_boundaries(client, supervisor_token, qm_token):
+    sup_headers = {"Authorization": f"Bearer {supervisor_token}"}
+    qm_headers = {"Authorization": f"Bearer {qm_token}"}
+
+    # Supervisor CAN read plant telemetry / dashboard
+    dash_res = client.get("/api/v1/dashboard/metrics", headers=sup_headers)
+    assert dash_res.status_code == 200
+
+    # Supervisor CAN view defect register
+    defects_res = client.get("/api/v1/defects", headers=sup_headers)
+    assert defects_res.status_code == 200
+
+    # Create a test CAPA task using QM
+    act_data = {
+        "defect_id": 1,
+        "title": "Clean nozzle runner for supervisor test",
+        "description": "Standard maintenance",
+        "assigned_to_user_id": 4,  # Assigned to sup_davis
+        "target_date": (datetime.utcnow() + timedelta(days=2)).isoformat()
+    }
+    capa_res = client.post("/api/v1/actions", json=act_data, headers=qm_headers)
+    assert capa_res.status_code == 201
+    capa_id = capa_res.json()["id"]
+
+    # Supervisor CAN coordinate/update remediation progress (e.g. mark IN_PROGRESS or add notes)
+    sup_update = client.patch(
+        f"/api/v1/actions/{capa_id}",
+        json={"status": "IN_PROGRESS", "description": "Crew dispatched to line"},
+        headers=sup_headers
+    )
+    assert sup_update.status_code == 200
+
+    # Supervisor is BLOCKED from approving quality disposition (403)
+    review_res = client.post(
+        "/api/v1/reviews/1",
+        json={"decision": "CONFIRMED_DEFECT", "defect_category": "BLOWHOLE", "reason": "Supervisor attempt"},
+        headers=sup_headers
+    )
+    assert review_res.status_code == 403
+    assert "inspection:review" in review_res.json()["detail"]
+
+    # Supervisor is BLOCKED from releasing a batch (403)
+    batch_res = client.post(
+        "/api/v1/batches/1/decisions",
+        json={"new_status": "RELEASED", "reason": "Supervisor trying to release"},
+        headers=sup_headers
+    )
+    assert batch_res.status_code == 403
+    assert "batch:release" in batch_res.json()["detail"]
+
+    # Supervisor is BLOCKED from verifying/closing CAPA (403)
+    verify_res = client.patch(
+        f"/api/v1/actions/{capa_id}",
+        json={"status": "VERIFIED"},
+        headers=sup_headers
+    )
+    assert verify_res.status_code == 403
+    assert "capa:verify" in verify_res.json()["detail"]
+
+
+# 13. System Admin separation of powers (no quality approvals, no batch release, no CAPA closure)
+def test_system_admin_separation_of_powers(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    # Admin CAN view security audit log
+    audit_res = client.get("/api/v1/auth/audit", headers=headers)
+    assert audit_res.status_code == 200
+
+    # Admin CAN list users
+    users_res = client.get("/api/v1/auth/users", headers=headers)
+    assert users_res.status_code == 200
+
+    # Admin CANNOT release batches
+    batch_res = client.post(
+        "/api/v1/batches/1/decisions",
+        json={"new_status": "RELEASED", "reason": "Admin unauthorized release"},
+        headers=headers
+    )
+    assert batch_res.status_code == 403
+    assert "batch:release" in batch_res.json()["detail"]
+
+    # Admin CANNOT close/verify CAPA
+    capa_res = client.patch(
+        "/api/v1/actions/1",
+        json={"status": "VERIFIED"},
+        headers=headers
+    )
+    assert capa_res.status_code == 403
+    assert "capa:verify" in capa_res.json()["detail"]
+
+    # Admin CANNOT confirm defect dispositions
+    review_res = client.post(
+        "/api/v1/reviews/1",
+        json={"decision": "CONFIRMED_DEFECT", "defect_category": "CRACK", "reason": "Admin quality review attempt"},
+        headers=headers
+    )
+    assert review_res.status_code == 403
+    assert "inspection:review" in review_res.json()["detail"]
+
+
+# 14. Mandatory justification reasons for batch decisions
+def test_batch_decision_mandatory_reason_validation(client, qm_token):
+    qm_headers = {"Authorization": f"Bearer {qm_token}"}
+
+    # Reject empty string
+    res_empty = client.post(
+        "/api/v1/batches/1/decisions",
+        json={"new_status": "ON_HOLD", "reason": ""},
+        headers=qm_headers
+    )
+    assert res_empty.status_code == 400
+    assert "reason is required" in res_empty.json()["detail"].lower()
+
+    # Reject whitespace only
+    res_spaces = client.post(
+        "/api/v1/batches/1/decisions",
+        json={"new_status": "ON_HOLD", "reason": "    "},
+        headers=qm_headers
+    )
+    assert res_spaces.status_code == 400
+
+    # Accept valid substantive reason
+    res_valid = client.post(
+        "/api/v1/batches/1/decisions",
+        json={"new_status": "ON_HOLD", "reason": "Suspected ladle nozzle erosion; placing coil batch under quarantine."},
+        headers=qm_headers
+    )
+    assert res_valid.status_code == 200
+    assert res_valid.json()["status"] == "ON_HOLD"
+
+
+# 15. Mandatory justification reasons for defect reviews
+def test_defect_review_mandatory_reason_validation(client, qm_token, inspector_token):
+    # Operator Alex creates an inspection
+    op_login = client.post("/api/v1/auth/login", data={"username": "op_alex", "password": "op123"})
+    op_token = op_login.json()["access_token"]
+    op_headers = {"Authorization": f"Bearer {op_token}"}
+    qm_headers = {"Authorization": f"Bearer {qm_token}"}
+
+    create_res = client.post(
+        "/api/v1/inspections",
+        data={
+            "product_id": 1,
+            "batch_id": 1,
+            "item_identifier": "COIL-REASON-TEST",
+            "sample_preset": "eval_sample_defective_01.jpeg"
+        },
+        headers=op_headers
+    )
+    assert create_res.status_code == 201
+    insp_id = create_res.json()["id"]
+
+    # Attempt to review without any reason or notes -> BLOCKED (400)
+    res_no_reason = client.post(
+        f"/api/v1/reviews/{insp_id}",
+        json={"decision": "CONFIRMED_DEFECT", "defect_category": "BLOWHOLE", "reason": ""},
+        headers=qm_headers
+    )
+    assert res_no_reason.status_code == 400
+    assert "mandatory" in res_no_reason.json()["detail"].lower() or "reason" in res_no_reason.json()["detail"].lower()
+
+    # Provide substantive reason -> ALLOWED (200)
+    res_with_reason = client.post(
+        f"/api/v1/reviews/{insp_id}",
+        json={"decision": "CONFIRMED_DEFECT", "defect_category": "BLOWHOLE", "reason": "High-density surface voids confirmed under optical microscopy."},
+        headers=qm_headers
+    )
+    assert res_with_reason.status_code == 200
+    assert res_with_reason.json()["status"] == "CONFIRMED_DEFECT"
+
+
+# 16. Self-approval prevention on inspections using authenticated actor IDs
+def test_self_approval_prevention_on_inspections(client, inspector_token, qm_token):
+    insp_headers = {"Authorization": f"Bearer {inspector_token}"}
+    qm_headers = {"Authorization": f"Bearer {qm_token}"}
+
+    # Inspector Marcus Lee creates an inspection
+    create_res = client.post(
+        "/api/v1/inspections",
+        data={
+            "product_id": 1,
+            "batch_id": 1,
+            "item_identifier": "COIL-SELF-APPROVE-TEST",
+            "sample_preset": "eval_sample_defective_02.jpeg"
+        },
+        headers=insp_headers
+    )
+    assert create_res.status_code == 201
+    insp_id = create_res.json()["id"]
+
+    # Inspector Marcus attempts to approve his own inspection -> BLOCKED (403: Separation of duties)
+    self_review = client.post(
+        f"/api/v1/reviews/{insp_id}",
+        json={"decision": "CONFIRMED_DEFECT", "defect_category": "BLOWHOLE", "reason": "Self approving my own find"},
+        headers=insp_headers
+    )
+    assert self_review.status_code == 403
+    assert "Separation of duties" in self_review.json()["detail"]
+
+    # Independent reviewer (QM Elena Vance) reviews -> ALLOWED (200)
+    peer_review = client.post(
+        f"/api/v1/reviews/{insp_id}",
+        json={"decision": "CONFIRMED_DEFECT", "defect_category": "BLOWHOLE", "reason": "Peer verification completed by Quality Manager."},
+        headers=qm_headers
+    )
+    assert peer_review.status_code == 200
+
+
+# 17. Image serving authorization and object isolation
+def test_image_serving_authorization_and_isolation(client, operator_token, inspector_token):
+    # Public eval sample is accessible without token
+    pub_res = client.get("/api/v1/inspections/images/eval_sample_ok_01.jpeg")
+    assert pub_res.status_code == 200
+
+    # Non-eval unknown / proprietary image requested without token returns 401
+    anon_res = client.get("/api/v1/inspections/images/nonexistent_or_proprietary.jpg")
+    assert anon_res.status_code == 401
+
+    # Inspector Marcus creates an inspection with an uploaded image or preset
+    insp_headers = {"Authorization": f"Bearer {inspector_token}"}
+    insp_res = client.post(
+        "/api/v1/inspections",
+        data={
+            "product_id": 1,
+            "batch_id": 1,
+            "item_identifier": "COIL-IMG-AUTH-TEST",
+            "sample_preset": "eval_sample_defective_01.jpeg"
+        },
+        headers=insp_headers
+    )
+    assert insp_res.status_code == 201
+    img_filename = insp_res.json()["latest_image_url"].split("/")[-1]
+
+    # Inspector Marcus can download it with auth header
+    dl_insp = client.get(f"/api/v1/inspections/images/{img_filename}", headers=insp_headers)
+    assert dl_insp.status_code == 200
+
+    # Inspector Marcus can also download it with token query parameter (e.g. for browser <img> tags)
+    dl_query = client.get(f"/api/v1/inspections/images/{img_filename}?token={inspector_token}")
+    assert dl_query.status_code == 200
+
+
+# 18. Session switching and token authenticity
+def test_session_switching_and_tampered_token(client):
+    # Login as Operator Alex
+    op_res = client.post("/api/v1/auth/login", data={"username": "op_alex", "password": "op123"})
+    assert op_res.status_code == 200
+    op_token = op_res.json()["access_token"]
+    assert op_res.json()["user"]["role"] == "production_operator"
+
+    # Switch session: login as Quality Manager Elena
+    qm_res = client.post("/api/v1/auth/login", data={"username": "qm_elena", "password": "qm123"})
+    assert qm_res.status_code == 200
+    qm_token = qm_res.json()["access_token"]
+    assert qm_res.json()["user"]["role"] == "quality_manager"
+    assert qm_token != op_token
+
+    # Verify tampered token is rejected
+    tampered_headers = {"Authorization": "Bearer invalid.fake.token"}
+    tampered_res = client.get("/api/v1/auth/me", headers=tampered_headers)
+    assert tampered_res.status_code == 401

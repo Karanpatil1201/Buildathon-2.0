@@ -5,9 +5,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, distinct
 
 from app.database import get_db
-from app.models import Inspection, ConfirmedDefect, CorrectiveAction, Batch, Product
+from app.models import Inspection, ConfirmedDefect, CorrectiveAction, Batch, Product, User
 from app.schemas import DashboardMetricsOut, TrendPoint
 from app.routers.inspections import _format_inspection_out
+from app.rbac import require_permissions, PERM_DASHBOARD_READ
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
@@ -15,7 +16,8 @@ router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 def get_dashboard_metrics(
     batch_id: Optional[int] = None,
     product_id: Optional[int] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions(PERM_DASHBOARD_READ))
 ):
     insp_query = db.query(Inspection)
     defect_query = db.query(ConfirmedDefect)

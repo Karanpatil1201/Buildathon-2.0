@@ -35,12 +35,19 @@ def submit_human_review(
     if review_in.decision not in valid_decisions:
         raise HTTPException(status_code=400, detail=f"Invalid decision. Allowed: {valid_decisions}")
 
+    justification = (review_in.reason or review_in.notes or "").strip()
+    if not justification:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A documented reason is mandatory when confirming or overriding defect classification."
+        )
+
     # Create immutable Human Review record
     review = HumanReview(
         inspection_id=insp.id,
         reviewer_id=current_user.id,
         decision=review_in.decision,
-        reason=review_in.reason,
+        reason=review_in.reason or justification,
         notes=review_in.notes
     )
     db.add(review)

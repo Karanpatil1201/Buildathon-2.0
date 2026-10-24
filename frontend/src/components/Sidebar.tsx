@@ -114,6 +114,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const user = currentUser ?? null;
   const filteredSections = navSections.map((section) => {
     const visibleItems = section.items.filter((item) => {
+      if (item.id === 'overview' || item.id === 'digital_twin' || item.id === 'copilot') {
+        return hasPermission(user, PERM_DASHBOARD_READ);
+      }
       if (item.id === 'review' || item.id === 'prioritization') {
         return hasPermission(user, PERM_INSPECTION_REVIEW);
       }
@@ -121,12 +124,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         return hasPermission(user, PERM_INSPECTION_CREATE);
       }
       if (item.id === 'batches') {
-        return hasPermission(user, PERM_BATCH_READ);
+        return hasPermission(user, PERM_BATCH_READ) && hasPermission(user, PERM_DASHBOARD_READ);
       }
       if (item.id === 'defects') {
         return hasPermission(user, PERM_DEFECT_READ);
       }
-      return true;
+      return false;
     });
     return { ...section, items: visibleItems };
   }).filter((section) => section.items.length > 0);

@@ -1,10 +1,11 @@
 import {
   User, Product, Batch, BatchDecision, Inspection,
   DashboardMetrics, CopilotResponse, PrioritizedInspection,
-  BenchmarkMetrics, EvalSample, ConfirmedDefect, CorrectiveAction
+  BenchmarkMetrics, EvalSample, ConfirmedDefect, CorrectiveAction, ReinspectionComparisonData
 } from '../types';
+import { apiUrl, API_BASE_URL, BACKEND_URL, resolveImageUrl } from '../config/api';
 
-const API_BASE = '/api/v1';
+export { apiUrl, API_BASE_URL, BACKEND_URL, resolveImageUrl };
 
 class ApiClient {
   private token: string | null = null;
@@ -57,10 +58,21 @@ class ApiClient {
       headers['Content-Type'] = 'application/json';
     }
 
-    const res = await fetch(`${API_BASE}${endpoint}`, {
-      ...options,
-      headers
-    });
+    const url = apiUrl(endpoint);
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        ...options,
+        headers
+      });
+    } catch (networkErr: any) {
+      const err: any = new Error(
+        `Unable to connect to the inspection backend (${url}). Check your network connection or verify that VITE_API_URL is configured.`
+      );
+      err.status = 0;
+      err.isNetworkError = true;
+      throw err;
+    }
 
     if (!res.ok) {
       let errorMsg = `Request failed (${res.status})`;
@@ -93,11 +105,22 @@ class ApiClient {
     formData.append('username', username);
     formData.append('password', password);
 
-    const res = await fetch(`${API_BASE}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: formData.toString()
-    });
+    const url = apiUrl('/auth/login');
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formData.toString()
+      });
+    } catch (networkErr: any) {
+      const err: any = new Error(
+        `Unable to reach authentication server at ${url}. Please verify the backend service is running.`
+      );
+      err.status = 0;
+      err.isNetworkError = true;
+      throw err;
+    }
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -205,6 +228,21 @@ class ApiClient {
     severity?: string;
   }): Promise<Inspection> {
     return this.request<Inspection>(`/reviews/${inspectionId}`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  public async getReinspectionComparison(inspectionId: number): Promise<ReinspectionComparisonData> {
+    return this.request<ReinspectionComparisonData>(`/inspections/${inspectionId}/reinspection-comparison`);
+  }
+
+  public async submitComparisonReview(inspectionId: number, data: {
+    decision: string;
+    notes: string;
+    close_capa?: boolean;
+  }): Promise<ReinspectionComparisonData> {
+    return this.request<ReinspectionComparisonData>(`/inspections/${inspectionId}/comparison-review`, {
       method: 'POST',
       body: JSON.stringify(data)
     });

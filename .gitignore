@@ -64,3 +64,8 @@ Thumbs.db
 *.swo
 
 
+
+# Environment files
+.env
+.env.*
+!.env.example

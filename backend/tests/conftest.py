@@ -45,3 +45,9 @@ def operator_token(client):
     assert res.status_code == 200
     return res.json()["access_token"]
 
+
+@pytest.fixture(scope="session")
+def supervisor_token(client):
+    res = client.post("/api/v1/auth/login", data={"username": "sup_davis", "password": "sup123"})
+    assert res.status_code == 200
+    return res.json()["access_token"]

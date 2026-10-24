@@ -41,8 +41,9 @@ export const PERM_SYSTEM_CONFIG = 'system:config';
 export function normalizeRole(roleStr?: string): string {
   if (!roleStr) return 'production_operator';
   const r = roleStr.toLowerCase().trim();
-  if (['operator', 'production_operator', 'supervisor'].includes(r)) return 'production_operator';
+  if (['operator', 'production_operator'].includes(r)) return 'production_operator';
   if (['inspector', 'quality_inspector'].includes(r)) return 'quality_inspector';
+  if (['supervisor', 'production_supervisor'].includes(r)) return 'production_supervisor';
   if (['quality_manager', 'qm'].includes(r)) return 'quality_manager';
   if (['admin', 'system_admin'].includes(r)) return 'system_admin';
   return r;
@@ -66,6 +67,14 @@ export function hasPermission(user: User | null, permission: string): boolean {
       PERM_REPORTS_READ, PERM_AUDIT_READ
     ].includes(permission);
   }
+  if (norm === 'production_supervisor') {
+    return [
+      PERM_INSPECTION_READ, PERM_INSPECTION_READ_ALL,
+      PERM_DEFECT_READ, PERM_CAPA_READ, PERM_CAPA_UPDATE, PERM_CAPA_COMPLETE,
+      PERM_BATCH_READ, PERM_DASHBOARD_READ, PERM_DASHBOARD_KPI,
+      PERM_REPORTS_READ, PERM_AUDIT_READ
+    ].includes(permission);
+  }
   if (norm === 'system_admin') {
     return [
       PERM_USERS_READ, PERM_USERS_CREATE, PERM_USERS_UPDATE, PERM_USERS_DEACTIVATE,
@@ -78,7 +87,7 @@ export function hasPermission(user: User | null, permission: string): boolean {
   return [
     PERM_INSPECTION_CREATE, PERM_INSPECTION_READ, PERM_INSPECTION_INFER,
     PERM_DEFECT_FLAG, PERM_DEFECT_READ, PERM_CAPA_READ, PERM_CAPA_COMPLETE,
-    PERM_BATCH_READ, PERM_BATCH_CREATE, PERM_DASHBOARD_READ
+    PERM_BATCH_READ, PERM_BATCH_CREATE
   ].includes(permission);
 }
 
@@ -158,6 +167,12 @@ export function getRoleBadge(role?: string): { label: string; desc: string; badg
         label: 'Quality Inspector',
         desc: 'Visual Evidence Analysis & Defect Sign-off',
         badgeColor: 'bg-[#7895A5] text-[#FFFFFF]'
+      };
+    case 'production_supervisor':
+      return {
+        label: 'Production Supervisor',
+        desc: 'Production Line Oversight, Remediation & Reinspection Requests',
+        badgeColor: 'bg-[#8F6A44] text-[#FFFFFF]'
       };
     case 'system_admin':
       return {

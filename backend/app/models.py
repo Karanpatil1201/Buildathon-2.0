@@ -111,6 +111,7 @@ class ImageEvidence(Base):
     mime_type = Column(String(80), nullable=False)
     sha256_hash = Column(String(64), nullable=False)
     heatmap_path = Column(String(255), nullable=True)
+    image_scope = Column(String(50), default="ITEM", nullable=True)  # ITEM, SURFACE, BATCH_SAMPLE
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
 
     inspection = relationship("Inspection", back_populates="images")
@@ -196,17 +197,31 @@ class Reinspection(Base):
     original_inspection_id = Column(Integer, ForeignKey("inspections.id"), nullable=False)
     follow_up_inspection_id = Column(Integer, ForeignKey("inspections.id"), nullable=True)
     reason = Column(Text, nullable=False)
+    image_scope = Column(String(50), default="ITEM", nullable=False)  # ITEM, SURFACE, BATCH_SAMPLE
+    comparison_suggestion = Column(String(50), default="PENDING_REVIEW", nullable=False)
+    # LIKELY_IMPROVED, DEFECT_STILL_PRESENT, NEW_OR_DIFFERENT_ANOMALY, INCONCLUSIVE, PENDING_REVIEW
+    comparison_decision = Column(String(50), nullable=True)
+    # CONFIRM_CORRECTION, DEFECT_STILL_PRESENT, REQUEST_ANOTHER_INSPECTION, INCONCLUSIVE
+    reviewer_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    reviewer_notes = Column(Text, nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    linked_action_id = Column(Integer, ForeignKey("corrective_actions.id"), nullable=True)
     status = Column(String(30), default="PENDING", nullable=False)  # PENDING, COMPLETED
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+
+    original_inspection = relationship("Inspection", foreign_keys=[original_inspection_id])
+    follow_up_inspection = relationship("Inspection", foreign_keys=[follow_up_inspection_id])
+    reviewer = relationship("User", foreign_keys=[reviewer_id])
+    linked_action = relationship("CorrectiveAction", foreign_keys=[linked_action_id])
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id = Column(Integer, primary_key=True, index=True)
-    entity_type = Column(String(60), nullable=False)  # BATCH, INSPECTION, REVIEW, DEFECT, ACTION
+    entity_type = Column(String(60), nullable=False)  # BATCH, INSPECTION, REVIEW, DEFECT, ACTION, REINSPECTION
     entity_id = Column(Integer, nullable=False)
     actor_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    action = Column(String(60), nullable=False)       # STATUS_CHANGE, OVERRIDE, HOLD, RELEASE, REOPEN, CLOSE
+    action = Column(String(60), nullable=False)       # STATUS_CHANGE, OVERRIDE, HOLD, RELEASE, REOPEN, CLOSE, REINSPECTION_COMPARISON
     previous_state = Column(String(100), nullable=True)
     new_state = Column(String(100), nullable=True)
     notes = Column(Text, nullable=True)

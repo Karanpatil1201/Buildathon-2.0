@@ -346,3 +346,41 @@ class PrioritizationEvaluationOut(BaseModel):
     high_risk_coverage_rate: float
     review_efficiency_gain_pct: float
     description: str
+
+
+# ----------------- Reinspection & Comparison -----------------
+class ComparisonReviewCreate(BaseModel):
+    decision: str
+    notes: str
+    close_capa: Optional[bool] = False
+
+class ReinspectionRecordOut(BaseModel):
+    id: int
+    original_inspection_id: int
+    follow_up_inspection_id: Optional[int] = None
+    reason: str
+    image_scope: str = 'ITEM'
+    comparison_suggestion: str = 'PENDING_REVIEW'
+    comparison_decision: Optional[str] = None
+    reviewer_id: Optional[int] = None
+    reviewer_name: Optional[str] = None
+    reviewer_notes: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
+    linked_action_id: Optional[int] = None
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class ReinspectionComparisonOut(BaseModel):
+    original_inspection: Optional[InspectionDetailOut] = None
+    reinspection: Optional[InspectionDetailOut] = None
+    reinspection_record: Optional[ReinspectionRecordOut] = None
+    linked_defect: Optional[Dict[str, Any]] = None
+    linked_capa: Optional[Dict[str, Any]] = None
+    comparison_suggestion: str
+    comparison_decision: str
+    recommendation: str
+    requires_human_approval: bool = True
+

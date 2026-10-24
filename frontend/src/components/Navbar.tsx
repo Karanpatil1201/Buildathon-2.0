@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown, Play, AlertCircle, Shield, KeyRound } from 'lucide-react';
+import { ChevronDown, Play, AlertCircle, KeyRound } from 'lucide-react';
 import { User } from '../types';
 import { getRoleBadge } from '../utils/rbac';
 
@@ -24,8 +24,8 @@ export const Navbar: React.FC<NavbarProps> = ({ currentUser, onSwitchUser, onRep
   const currentRoleInfo = getRoleBadge(currentUser?.role);
 
   return (
-    <header className="bg-[#FFFCF6] border-b border-[#D8C9AE] sticky top-0 z-40 px-5 py-2.5 shadow-sm">
-      <div className="flex items-center justify-between max-w-7xl mx-auto">
+    <header className="bg-[#FFFCF6] border-b border-[#D8C9AE] sticky top-0 z-40 px-4 sm:px-6 py-2.5 shadow-sm">
+      <div className="flex items-center justify-between w-full">
         {/* Brand */}
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-[#71845B] border border-[#71845B] flex items-center justify-center text-[#FFFFFF] font-sans font-bold text-sm shadow-sm">

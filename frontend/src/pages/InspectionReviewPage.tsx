@@ -15,6 +15,8 @@ import { Inspection, User } from '../types';
 import { api } from '../api/client';
 import { StatusBadge } from '../components/Badge';
 import { canReviewInspection } from '../utils/rbac';
+import { resolveImageUrl } from '../config/api';
+import { BeforeAfterComparison } from '../components/BeforeAfterComparison';
 
 interface InspectionReviewPageProps {
   currentUser: User | null;
@@ -59,6 +61,21 @@ export const InspectionReviewPage: React.FC<InspectionReviewPageProps> = ({
   const [severity, setSeverity] = useState<string>('MAJOR');
   const [reason, setReason] = useState<string>('');
   const [reviewNotes, setReviewNotes] = useState<string>('');
+  const [reinspectionData, setReinspectionData] = useState<any>(null);
+
+  useEffect(() => {
+    if (selectedInspection) {
+      if (selectedInspection.is_reinspection || selectedInspection.original_inspection_id || (selectedInspection.follow_up_inspections && selectedInspection.follow_up_inspections.length > 0)) {
+        api.getReinspectionComparison(selectedInspection.id)
+          .then(data => setReinspectionData(data))
+          .catch(() => setReinspectionData(null));
+      } else {
+        setReinspectionData(null);
+      }
+    } else {
+      setReinspectionData(null);
+    }
+  }, [selectedInspection]);
 
   const loadInspections = async () => {
     try {
@@ -251,6 +268,20 @@ export const InspectionReviewPage: React.FC<InspectionReviewPageProps> = ({
         <div className="lg:col-span-8 space-y-4">
           {selectedInspection ? (
             <>
+              {/* Before vs After Reinspection Studio */}
+              {reinspectionData && (
+                <div className="mb-4">
+                  <BeforeAfterComparison
+                    comparison={reinspectionData}
+                    currentUser={currentUser}
+                    onDecisionSubmitted={(updated) => {
+                      setReinspectionData(updated);
+                      loadInspections();
+                      onRefreshMetrics();
+                    }}
+                  />
+                </div>
+              )}
               {/* Linked Original Inspection Banner (if this is a Reinspection) */}
               {selectedInspection.is_reinspection && selectedInspection.original_inspection && (
                 <div className="p-4 bg-[rgba(196,154,82,0.12)] border-2 border-[#C49A52] rounded-xl flex items-center justify-between text-xs font-sans shadow-sm">

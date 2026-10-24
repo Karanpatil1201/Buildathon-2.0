@@ -1,19 +1,20 @@
-import hashlib
+﻿import hashlib
 import json
+import jwt
 import shutil
 import uuid
 from pathlib import Path
 from typing import List, Optional
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Header, Query, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.database import get_db
-from app.models import Inspection, ImageEvidence, InferenceAttempt, Product, Batch, User, AuditLog
-from app.schemas import InspectionCreate, InspectionOut, InspectionDetailOut, InferenceAttemptOut, ImageEvidenceOut, HumanReviewOut
+from app.models import Inspection, ImageEvidence, InferenceAttempt, Product, Batch, User, AuditLog, Reinspection, ConfirmedDefect, CorrectiveAction
+from app.schemas import InspectionCreate, InspectionOut, InspectionDetailOut, InferenceAttemptOut, ImageEvidenceOut, HumanReviewOut, ComparisonReviewCreate
 from app.auth import get_current_user
 from app.config import settings
 from app.ml.classifier import ml_engine
@@ -53,6 +54,7 @@ def _format_inspection_out(insp: Inspection) -> InspectionOut:
     )
 
 from app.rbac import (
+    PERM_INSPECTION_REVIEW,
     PERM_INSPECTION_CREATE, PERM_INSPECTION_READ, PERM_INSPECTION_READ_ALL,
     PERM_INSPECTION_RETRY, require_permissions, has_permission
 )
@@ -109,6 +111,8 @@ async def create_inspection_with_evidence(
     notes: Optional[str] = Form(None),
     is_reinspection: bool = Form(False),
     original_inspection_id: Optional[int] = Form(None),
+    image_scope: str = Form("ITEM"),
+    linked_action_id: Optional[int] = Form(None),
     sample_preset: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
@@ -234,6 +238,35 @@ async def create_inspection_with_evidence(
         error_message=ml_result.get("error_message")
     )
     db.add(attempt)
+
+    if is_reinspection and original_inspection_id:
+        orig_insp = db.query(Inspection).filter(Inspection.id == original_inspection_id).first()
+        suggestion = "INCONCLUSIVE"
+        if orig_insp and orig_insp.inference_attempts:
+            orig_att = orig_insp.inference_attempts[-1]
+            orig_defect = orig_att.defect_type or (orig_insp.defect.defect_category if orig_insp.defect else None)
+            new_pred = ml_result.get("prediction", "UNKNOWN")
+            new_defect = ml_result.get("defect_type")
+
+            if new_pred in ("OK", "NORMAL") or new_defect == "NORMAL":
+                suggestion = "LIKELY_IMPROVED"
+            elif new_defect and orig_defect and str(new_defect).lower() == str(orig_defect).lower():
+                suggestion = "DEFECT_STILL_PRESENT"
+            elif new_pred not in ("OK", "NORMAL"):
+                suggestion = "NEW_OR_DIFFERENT_ANOMALY"
+            else:
+                suggestion = "INCONCLUSIVE"
+
+        reinspection_record = Reinspection(
+            original_inspection_id=original_inspection_id,
+            follow_up_inspection_id=inspection.id,
+            reason=notes or f"Follow-up for {item_identifier}",
+            image_scope=image_scope,
+            comparison_suggestion=suggestion,
+            linked_action_id=linked_action_id,
+            status="PENDING"
+        )
+        db.add(reinspection_record)
 
     # Update inspection status based on inference
     inspection.status = "UNDER_REVIEW" if ml_result["status"] == "SUCCESS" else "PENDING_INFERENCE"
@@ -407,9 +440,303 @@ def retry_inference(
     db.refresh(attempt)
     return attempt
 
+
+@router.get("/{inspection_id}/reinspection-comparison")
+def get_reinspection_comparison(
+    inspection_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions(PERM_INSPECTION_READ))
+):
+    """Retrieve Before vs After Reinspection comparison bundle with AI suggestion & human audit state."""
+    insp = db.query(Inspection).filter(Inspection.id == inspection_id).first()
+    if not insp:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+
+    # Determine original vs follow-up
+    if insp.is_reinspection and insp.original_inspection_id:
+        orig_insp = db.query(Inspection).filter(Inspection.id == insp.original_inspection_id).first()
+        post_insp = insp
+    else:
+        follow_up = db.query(Inspection).filter(Inspection.original_inspection_id == insp.id).order_by(Inspection.created_at.desc()).first()
+        orig_insp = insp
+        post_insp = follow_up
+
+    # Object-level access isolation for operators
+    if not has_permission(current_user.role, PERM_INSPECTION_READ_ALL):
+        is_owner = (orig_insp and orig_insp.inspector_id == current_user.id) or (post_insp and post_insp.inspector_id == current_user.id)
+        if not is_owner:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: Operators may only view reinspection comparisons for their own authored inspections."
+            )
+
+    orig_detail = get_inspection_detail(orig_insp.id, db, current_user) if orig_insp else None
+    post_detail = get_inspection_detail(post_insp.id, db, current_user) if post_insp else None
+
+    # Get linked defect and CAPA
+    linked_defect = None
+    linked_capa = None
+    if orig_insp and orig_insp.defect:
+        from app.routers.defects import _format_defect_out
+        linked_defect = _format_defect_out(orig_insp.defect)
+        if orig_insp.defect.corrective_actions:
+            from app.routers.actions import _format_action_out
+            latest_action = sorted(orig_insp.defect.corrective_actions, key=lambda a: a.created_at, reverse=True)[0]
+            linked_capa = _format_action_out(latest_action)
+
+    # Reinspection entity
+    reinsp_record = None
+    if orig_insp and post_insp:
+        r_rec = db.query(Reinspection).filter(
+            Reinspection.original_inspection_id == orig_insp.id,
+            Reinspection.follow_up_inspection_id == post_insp.id
+        ).first()
+        if r_rec:
+            reinsp_record = {
+                "id": r_rec.id,
+                "original_inspection_id": r_rec.original_inspection_id,
+                "follow_up_inspection_id": r_rec.follow_up_inspection_id,
+                "reason": r_rec.reason,
+                "image_scope": getattr(r_rec, "image_scope", "ITEM"),
+                "comparison_suggestion": getattr(r_rec, "comparison_suggestion", None),
+                "comparison_decision": getattr(r_rec, "comparison_decision", None),
+                "reviewer_id": getattr(r_rec, "reviewer_id", None),
+                "reviewer_notes": getattr(r_rec, "reviewer_notes", None),
+                "reviewed_at": r_rec.reviewed_at.isoformat() if getattr(r_rec, "reviewed_at", None) else None,
+                "linked_action_id": getattr(r_rec, "linked_action_id", None),
+                "status": r_rec.status,
+                "created_at": r_rec.created_at.isoformat() if r_rec.created_at else None
+            }
+
+    ref_filename = "eval_sample_ok_01.jpeg"
+    ref_path = settings.EVAL_SAMPLES_DIR / ref_filename
+    ref_available = ref_path.exists()
+
+    reference_info = {
+        "filename": ref_filename if ref_available else None,
+        "label": "Golden Standard / Known Defect-Free Reference",
+        "description": "Authentic defect-free industrial casting reference surface",
+        "url": f"/api/v1/inspections/eval-samples/{ref_filename}" if ref_available else None
+    }
+
+    # Derive automated assessment outcome
+    assessment_outcome = "INCONCLUSIVE"
+    recommendation = "Inspection requires human visual review."
+
+    if reinsp_record and reinsp_record.get("comparison_suggestion"):
+        assessment_outcome = reinsp_record["comparison_suggestion"]
+        if assessment_outcome == "LIKELY_IMPROVED":
+            recommendation = "AI analysis indicates surface defects have cleared. Review Grad-CAM focus and confirm correction."
+        elif assessment_outcome == "DEFECT_STILL_PRESENT":
+            recommendation = "Target defect signature remains present in post-repair scan. Escalation or rework advised."
+        elif assessment_outcome == "NEW_OR_DIFFERENT_ANOMALY":
+            recommendation = "A different surface anomaly pattern was detected on the post-repair surface. Engineering inspection recommended."
+    elif orig_insp and post_insp:
+        orig_pred = orig_detail.latest_prediction if orig_detail else None
+        post_pred = post_detail.latest_prediction if post_detail else None
+        orig_defect_type = orig_detail.latest_defect_type if orig_detail else None
+        post_defect_type = post_detail.latest_defect_type if post_detail else None
+
+        if post_pred in ("OK", "NORMAL") or post_defect_type == "NORMAL":
+            assessment_outcome = "LIKELY_IMPROVED"
+            recommendation = "AI analysis indicates surface defects have cleared. Review Grad-CAM focus and confirm correction."
+        elif post_pred not in ("OK", "NORMAL"):
+            if post_defect_type and orig_defect_type and str(post_defect_type).lower() == str(orig_defect_type).lower():
+                assessment_outcome = "DEFECT_STILL_PRESENT"
+                recommendation = f"Identical defect '{orig_defect_type}' signature remains visible on post-repair surface."
+            else:
+                assessment_outcome = "NEW_OR_DIFFERENT_ANOMALY"
+                recommendation = f"A different surface anomaly ({post_defect_type or 'UNSPECIFIED'}) was flagged on the post-repair surface."
+
+    human_decision = reinsp_record.get("comparison_decision") if reinsp_record else None
+    if not human_decision:
+        human_decision = "PENDING_REVIEW"
+
+    return {
+        "original_inspection": orig_detail,
+        "reinspection": post_detail,
+        "post_repair_inspection": post_detail,
+        "reference_image": reference_info,
+        "reinspection_record": reinsp_record,
+        "linked_defect": linked_defect,
+        "linked_capa": linked_capa,
+        "assessment_outcome": assessment_outcome,
+        "comparison_suggestion": assessment_outcome,
+        "comparison_decision": human_decision,
+        "recommendation": recommendation,
+        "requires_human_approval": True
+    }
+
+@router.post("/{inspection_id}/comparison-review")
+def submit_comparison_review(
+    inspection_id: int,
+    review_in: ComparisonReviewCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions(PERM_INSPECTION_REVIEW))
+):
+    insp = db.query(Inspection).filter(Inspection.id == inspection_id).first()
+    if not insp:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+
+    # Determine original and follow-up
+    if insp.is_reinspection and insp.original_inspection_id:
+        orig_insp = db.query(Inspection).filter(Inspection.id == insp.original_inspection_id).first()
+        post_insp = insp
+    else:
+        follow_up = db.query(Inspection).filter(Inspection.original_inspection_id == insp.id).order_by(Inspection.created_at.desc()).first()
+        orig_insp = insp
+        post_insp = follow_up
+
+    # Separation of duties: submitter cannot approve comparison
+    involved_inspector_ids = {i.inspector_id for i in [insp, orig_insp, post_insp] if i and i.inspector_id}
+    if current_user.id in involved_inspector_ids:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Separation of duties violation: An inspector cannot review or approve their own submitted inspection."
+        )
+
+    valid_decisions = ["CONFIRM_CORRECTION", "DEFECT_STILL_PRESENT", "REQUEST_ANOTHER_INSPECTION", "INCONCLUSIVE"]
+    if review_in.decision not in valid_decisions:
+        raise HTTPException(status_code=400, detail=f"Invalid comparison decision. Allowed: {valid_decisions}")
+
+    if not review_in.notes or not review_in.notes.strip():
+        raise HTTPException(status_code=400, detail="Reviewer notes/explanation are required.")
+
+    if not orig_insp or not post_insp:
+        raise HTTPException(status_code=400, detail="Cannot review comparison: linked pair of original and follow-up inspections not found.")
+
+    # Find or create Reinspection record
+    r_rec = db.query(Reinspection).filter(
+        Reinspection.original_inspection_id == orig_insp.id,
+        Reinspection.follow_up_inspection_id == post_insp.id
+    ).first()
+    if not r_rec:
+        r_rec = Reinspection(
+            original_inspection_id=orig_insp.id,
+            follow_up_inspection_id=post_insp.id,
+            reason=post_insp.notes or f"Follow-up for {post_insp.item_identifier}",
+            status="PENDING"
+        )
+        db.add(r_rec)
+
+    r_rec.comparison_decision = review_in.decision
+    r_rec.reviewer_id = current_user.id
+    r_rec.reviewer_notes = review_in.notes
+    r_rec.reviewed_at = datetime.utcnow()
+    r_rec.status = "COMPLETED"
+
+    # Handle defect status and CAPA resolution
+    orig_defect = db.query(ConfirmedDefect).filter(ConfirmedDefect.inspection_id == orig_insp.id).first()
+    
+    if review_in.decision == "CONFIRM_CORRECTION":
+        post_insp.status = "PASSED"
+        orig_insp.status = "REINSPECTED"
+        if orig_defect:
+            orig_defect.review_status = "RESOLVED"
+            orig_defect.resolved_at = datetime.utcnow()
+
+        # Handle CAPA closure if requested
+        if review_in.close_capa:
+            from app.rbac import has_permission, PERM_CAPA_VERIFY
+            if not has_permission(current_user.role, PERM_CAPA_VERIFY):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Closing and verifying CAPA requires Quality Manager authority."
+                )
+            if orig_defect and orig_defect.corrective_actions:
+                for act in orig_defect.corrective_actions:
+                    act.status = "VERIFIED"
+                    act.completed_at = datetime.utcnow()
+                    act.notes = (act.notes or "") + f" | Verified & closed by QM {current_user.username} via Reinspection #{post_insp.id}."
+                    db.add(AuditLog(
+                        entity_type="ACTION",
+                        entity_id=act.id,
+                        actor_id=current_user.id,
+                        action="CAPA_VERIFIED_VIA_REINSPECTION",
+                        previous_state="IN_PROGRESS",
+                        new_state="VERIFIED",
+                        notes=f"CAPA verified closed via passing Before/After Comparison #{post_insp.id}."
+                    ))
+
+    elif review_in.decision == "DEFECT_STILL_PRESENT":
+        post_insp.status = "CONFIRMED_DEFECT"
+        if orig_defect:
+            orig_defect.review_status = "REOPENED"
+    elif review_in.decision == "REQUEST_ANOTHER_INSPECTION":
+        post_insp.status = "UNDER_REVIEW"
+        if orig_defect:
+            orig_defect.review_status = "REINSPECTION_PENDING"
+    else:  # INCONCLUSIVE
+        post_insp.status = "UNDER_REVIEW"
+
+    # Add audit log
+    audit = AuditLog(
+        entity_type="REINSPECTION",
+        entity_id=r_rec.id,
+        actor_id=current_user.id,
+        action="REINSPECTION_COMPARISON_REVIEW",
+        previous_state=getattr(r_rec, "comparison_suggestion", "PENDING_REVIEW") or "PENDING_REVIEW",
+        new_state=review_in.decision,
+        notes=f"Human Review: {review_in.decision}. Notes: {review_in.notes}"
+    )
+    db.add(audit)
+    db.commit()
+
+    return get_reinspection_comparison(post_insp.id, db, current_user)
+
 @router.get("/images/{filename}")
-def serve_image(filename: str):
+def serve_image(
+    filename: str,
+    db: Session = Depends(get_db),
+    authorization: Optional[str] = Header(None),
+    token: Optional[str] = Query(None)
+):
+    """Serve inspection image or Grad-CAM heatmap with record-level authorization."""
+    # Public evaluation samples check
+    eval_sample_path = settings.EVAL_SAMPLES_DIR / filename
+    if eval_sample_path.exists() and eval_sample_path.is_file():
+        return FileResponse(str(eval_sample_path))
+
+    # Authenticate proprietary inspection image request before revealing existence
+    raw_token = None
+    if authorization and authorization.startswith("Bearer "):
+        raw_token = authorization.split(" ")[1]
+    elif token:
+        raw_token = token
+
+    if not raw_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access proprietary inspection images.",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+
     file_path = settings.STORAGE_DIR / filename
-    if not file_path.exists():
+    if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="Image file not found")
+
+    try:
+        payload = jwt.decode(raw_token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        username: str = payload.get("sub")
+        if not username:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+
+    user = db.query(User).filter(User.username == username).first()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User account inactive or not found")
+
+    # Record-level authorization check:
+    if not has_permission(user.role, PERM_INSPECTION_READ_ALL):
+        img_ev = db.query(ImageEvidence).filter(
+            (ImageEvidence.file_path == filename) | (ImageEvidence.heatmap_path == filename)
+        ).first()
+        if img_ev and img_ev.inspection:
+            if img_ev.inspection.inspector_id != user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: Operators may only access images from their own authored inspections."
+                )
+
     return FileResponse(str(file_path))

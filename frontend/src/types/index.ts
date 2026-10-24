@@ -221,3 +221,57 @@ export interface EvalSample {
   source: string;
   description: string;
 }
+
+
+export type ImageScope = 'ITEM' | 'SURFACE' | 'BATCH_SAMPLE';
+
+export type ComparisonOutcome = 
+  | 'LIKELY_IMPROVED' 
+  | 'DEFECT_STILL_PRESENT' 
+  | 'NEW_OR_DIFFERENT_ANOMALY' 
+  | 'INCONCLUSIVE';
+
+export type ComparisonDecision = 
+  | 'CONFIRM_CORRECTION' 
+  | 'DEFECT_STILL_PRESENT' 
+  | 'REQUEST_ANOTHER_INSPECTION' 
+  | 'INCONCLUSIVE'
+  | 'PENDING_REVIEW';
+
+export interface ReinspectionRecord {
+  id: number;
+  original_inspection_id: number;
+  follow_up_inspection_id: number;
+  reason?: string;
+  image_scope?: ImageScope;
+  comparison_suggestion?: ComparisonOutcome;
+  comparison_decision?: ComparisonDecision;
+  reviewer_id?: number;
+  reviewer_notes?: string;
+  reviewed_at?: string;
+  linked_action_id?: number;
+  status: string;
+  created_at?: string;
+}
+
+export interface ReferenceImageInfo {
+  filename?: string;
+  label?: string;
+  description?: string;
+  url?: string;
+}
+
+export interface ReinspectionComparisonData {
+  original_inspection: Inspection;
+  reinspection?: Inspection;
+  post_repair_inspection?: Inspection;
+  reference_image?: ReferenceImageInfo;
+  reinspection_record?: ReinspectionRecord;
+  linked_defect?: ConfirmedDefect;
+  linked_capa?: CorrectiveAction;
+  assessment_outcome: ComparisonOutcome;
+  comparison_suggestion: ComparisonOutcome;
+  comparison_decision: ComparisonDecision;
+  recommendation: string;
+  requires_human_approval: boolean;
+}
