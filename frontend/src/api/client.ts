@@ -315,6 +315,82 @@ class ApiClient {
     });
   }
 
+  public async streamCopilot(
+    query: string,
+    batchNumber: string | undefined,
+    onStage: (stage: string, step: number, total: number) => void,
+    onResult: (result: CopilotResponse) => void
+  ): Promise<void> {
+    const url = apiUrl('/copilot/stream');
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    };
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ query, batch_number: batchNumber })
+    });
+
+    if (!res.ok) {
+      let errText = 'Failed to process copilot query';
+      try {
+        const errJson = await res.json();
+        errText = errJson.detail || errText;
+      } catch (e) {
+        errText = res.statusText || errText;
+      }
+      throw new Error(errText);
+    }
+
+    if (!res.body) {
+      throw new Error('Response body is null');
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const chunks = buffer.split('\n\n');
+      buffer = chunks.pop() || '';
+
+      for (const chunk of chunks) {
+        if (!chunk.trim()) continue;
+        const lines = chunk.split('\n');
+        let eventType = 'message';
+        let dataStr = '';
+
+        for (const line of lines) {
+          if (line.startsWith('event:')) {
+            eventType = line.replace('event:', '').trim();
+          } else if (line.startsWith('data:')) {
+            dataStr = line.replace('data:', '').trim();
+          }
+        }
+
+        if (eventType === 'stage' && dataStr) {
+          try {
+            const parsed = JSON.parse(dataStr);
+            onStage(parsed.stage, parsed.step, parsed.total);
+          } catch (e) {}
+        } else if (eventType === 'result' && dataStr) {
+          try {
+            const parsed: CopilotResponse = JSON.parse(dataStr);
+            onResult(parsed);
+          } catch (e) {}
+        }
+      }
+    }
+  }
+
   // --- Prioritization Innovation ---
   public async getPrioritizationQueue(): Promise<PrioritizedInspection[]> {
     return this.request<PrioritizedInspection[]>('/prioritization/queue');

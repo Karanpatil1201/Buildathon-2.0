@@ -90,15 +90,49 @@ class LightweightRAGRetriever:
         scored.sort(key=lambda x: x[0], reverse=True)
         return [item[1] for item in scored[:top_k]]
 
+    STOP_WORDS = {
+        "is", "are", "was", "were", "has", "have", "had", "will", "would", "the", "a", "an",
+        "on", "in", "at", "for", "of", "to", "from", "with", "summary", "status", "report",
+        "hold", "held", "plan", "records", "defect", "defects", "inspection", "inspections",
+        "quality", "review", "details", "data", "info", "information", "about", "this", "that",
+        "particular", "which", "what", "where", "why", "how", "when", "all", "any"
+    }
+
     def extract_batch_id(self, query_str: str) -> Optional[str]:
+        """
+        Robustly extracts batch identifiers (e.g. B-2026-101, B-2026-104, B-101, B-UNKNOWN-999).
+        Guarantees that words like 'is', 'the', 'on', 'hold' are NEVER extracted as batch IDs.
+        """
+        # 1. High-confidence explicit batch pattern (B-YYYY-NNN or B-NNN or B-ALPHANUM)
+        m = re.search(r"\b(B-\d{4}-\d+|B-[A-Za-z0-9_\-]+|B\d{3,})\b", query_str, re.IGNORECASE)
+        if m:
+            candidate = m.group(1).upper()
+            if candidate.lower() not in self.STOP_WORDS:
+                return candidate
+
+        # 2. Check for 'batch <id>' where <id> contains digits or hyphens and is not a stop word
         m_after_batch = re.search(r"\bbatch\s+([a-zA-Z0-9_\-]+)\b", query_str, re.IGNORECASE)
-        if m_after_batch and m_after_batch.group(1).lower() not in ["summary", "status", "report", "the", "on", "hold", "plan"]:
-            return m_after_batch.group(1).upper()
-        
-        m_b = re.search(r"\b(B[-\s]?\d+[-\w]*)\b", query_str, re.IGNORECASE)
-        if m_b and m_b.group(1).lower() != "batch":
-            return m_b.group(1).upper()
+        if m_after_batch:
+            candidate = m_after_batch.group(1).upper()
+            if candidate.lower() not in self.STOP_WORDS and any(c.isdigit() or c == "-" for c in candidate):
+                return candidate
+
+        # 3. Check for standalone B-digits (e.g. B-101)
+        m_b = re.search(r"\b(B[-\s]?\d+)\b", query_str, re.IGNORECASE)
+        if m_b:
+            candidate = m_b.group(1).replace(" ", "-").upper()
+            if candidate.lower() not in self.STOP_WORDS:
+                return candidate
+
         return None
+
+    def extract_defect_id(self, query_str: str) -> Optional[str]:
+        m = re.search(r"\b(DEF[-\s]?\d+)\b", query_str, re.IGNORECASE)
+        return m.group(1).replace(" ", "-").upper() if m else None
+
+    def extract_capa_id(self, query_str: str) -> Optional[str]:
+        m = re.search(r"\b(CAPA[-\s]?\d+)\b", query_str, re.IGNORECASE)
+        return m.group(1).replace(" ", "-").upper() if m else None
 
     def retrieve_context(
         self,

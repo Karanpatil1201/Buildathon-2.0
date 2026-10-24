@@ -17,22 +17,17 @@ class QualityCopilotEngine:
     1. Gathers authorized structured facts (batches, confirmed defects, CAPAs) and local SOPs.
     2. Explicitly separates human-confirmed defects from CNN model predictions.
     3. Leverages official Google GenAI SDK (Gemini) when configured.
-    4. Provides robust deterministic grounded RAG fallback when Gemini is offline or unconfigured.
+    4. Provides robust deterministic grounded RAG fallback with explicit reason when Gemini is offline.
     5. Enforces safety guardrails: no autonomous batch release or defect closure.
     """
     def __init__(self):
         self.provider = settings.GENAI_PROVIDER
 
-    def process_query(
-        self,
-        query_str: str,
-        current_user: User,
-        db: Session,
-        batch_param: Optional[str] = None
-    ) -> CopilotResponse:
+    def check_safety_guard(self, query_str: str) -> Optional[CopilotResponse]:
+        """
+        Intercepts autonomous state mutation attempts (certify, release, approve).
+        """
         query_lower = query_str.lower().strip()
-
-        # 1. Safety & Governance Guard: Block autonomous state mutation attempts
         mutation_verbs = ["certify", "override defect", "close defect", "approve batch", "quarantine batch", "unhold batch"]
         is_release_attempt = "release" in query_lower and any(b in query_lower for b in ["batch", "it", "product", "hold", "coil", "heat"])
         if any(w in query_lower for w in mutation_verbs) or is_release_attempt:
@@ -51,19 +46,24 @@ class QualityCopilotEngine:
                 provider="ForgeSight Grounded Governance Engine",
                 authorized=True
             )
+        return None
 
-        # 2. Retrieve authorized application context via Lightweight RAG Retriever
-        retrieved = rag_retriever.retrieve_context(
-            query_str=query_str,
-            current_user=current_user,
-            db=db,
-            batch_param=batch_param
-        )
-
+    def synthesize_from_retrieved(
+        self,
+        query_str: str,
+        retrieved: Dict[str, Any],
+        db: Session,
+        batch_param: Optional[str] = None
+    ) -> CopilotResponse:
+        """
+        Synthesizes the final response from retrieved context, attempting Gemini first,
+        then falling back to the deterministic synthesizer with an explicit provider label.
+        """
+        query_lower = query_str.lower().strip()
         citations: List[CopilotCitation] = retrieved.get("citations", [])
         stats: Dict[str, Any] = retrieved.get("stats", {})
 
-        # 3. Check if target batch was specified but does not exist
+        # Check if target batch was specified but does not exist
         target_batch_requested = batch_param or rag_retriever.extract_batch_id(query_str)
         if target_batch_requested and not retrieved.get("target_batch_number"):
             missing_msg = (
@@ -78,13 +78,14 @@ class QualityCopilotEngine:
                 answer=missing_msg,
                 citations=[],
                 grounded_stats={"requested_batch": target_batch_requested, "found": False},
-                provider="ForgeSight Grounded Governance Engine",
+                provider=gemini_client.get_fallback_provider_label("No database records found for requested batch"),
                 authorized=True
             )
 
-        # 4. Attempt Generation via Google GenAI SDK (Gemini)
-        if gemini_client.is_available:
-            gemini_text, gemini_error, provider_name = gemini_client.generate_grounded_response(
+        # Attempt Generation via Google GenAI SDK (Gemini)
+        gemini_error_msg = None
+        if gemini_client.is_configured:
+            gemini_text, gemini_error_msg, provider_name = gemini_client.generate_grounded_response(
                 query=query_str,
                 retrieved_context=retrieved
             )
@@ -98,11 +99,9 @@ class QualityCopilotEngine:
                     authorized=True
                 )
 
-        # 5. Deterministic Grounded RAG Synthesis (Guaranteed zero hallucination & offline reliability)
+        # Deterministic Grounded RAG Synthesis with explicit provider label
         answer = self._synthesize_grounded_response(query_lower, query_str, retrieved, db)
-        provider_label = "ForgeSight Grounded RAG Synthesizer"
-        if gemini_client._api_key and not gemini_client.is_available:
-            provider_label += " (Gemini Key Invalid/Offline - Deterministic Mode)"
+        provider_label = gemini_client.get_fallback_provider_label(gemini_error_msg)
 
         return CopilotResponse(
             query=query_str,
@@ -112,6 +111,29 @@ class QualityCopilotEngine:
             provider=provider_label,
             authorized=True
         )
+
+    def process_query(
+        self,
+        query_str: str,
+        current_user: User,
+        db: Session,
+        batch_param: Optional[str] = None
+    ) -> CopilotResponse:
+        # 1. Safety & Governance Guard
+        safety_response = self.check_safety_guard(query_str)
+        if safety_response:
+            return safety_response
+
+        # 2. Retrieve authorized application context via Lightweight RAG Retriever
+        retrieved = rag_retriever.retrieve_context(
+            query_str=query_str,
+            current_user=current_user,
+            db=db,
+            batch_param=batch_param
+        )
+
+        # 3. Synthesize response
+        return self.synthesize_from_retrieved(query_str, retrieved, db, batch_param)
 
     def _synthesize_grounded_response(
         self,
@@ -124,7 +146,8 @@ class QualityCopilotEngine:
 
         # CLASS 1: "Why is a particular batch on hold?"
         if ("why" in query_lower and ("hold" in query_lower or "status" in query_lower)) or \
-           ("on hold" in query_lower and batch_num):
+           ("on hold" in query_lower and batch_num) or \
+           ("on the hold" in query_lower and batch_num):
             return self._synthesize_batch_hold_reason(batch_num, retrieved, db)
 
         # CLASS 2: "Summarize the defects in a batch."
@@ -173,12 +196,12 @@ class QualityCopilotEngine:
         if batch.status != "ON_HOLD":
             lines.append(f"**Notice**: Batch `{batch.batch_number}` is currently marked as **`{batch.status}`**, not `ON_HOLD`.")
             if batch.decision_notes:
-                lines.append(f"- **Latest Decision Notes**: \'{batch.decision_notes}\'")
+                lines.append(f"- **Latest Decision Notes**: '{batch.decision_notes}'")
             return "\n".join(lines)
 
         lines.append("#### 1. Hold Trigger & Audit History")
         if batch.decision_notes:
-            lines.append(f"- **Official Quarantine Note**: \'{batch.decision_notes}\'")
+            lines.append(f"- **Official Quarantine Note**: '{batch.decision_notes}'")
         
         decisions = db.query(BatchDecision).filter(BatchDecision.batch_id == batch.id).order_by(BatchDecision.created_at.desc()).all()
         if decisions:
@@ -186,7 +209,7 @@ class QualityCopilotEngine:
                 decider = db.query(User).filter(User.id == d.decided_by_user_id).first()
                 dec_name = decider.full_name if decider else f"User #{d.decided_by_user_id}"
                 dec_role = decider.role if decider else ""
-                lines.append(f"- **Audit Event**: Status changed to `{d.new_status}` by **{dec_name}** ({dec_role}) on {d.created_at.strftime('%Y-%m-%d %H:%M')}: *\'{d.reason}\'*")
+                lines.append(f"- **Audit Event**: Status changed to `{d.new_status}` by **{dec_name}** ({dec_role}) on {d.created_at.strftime('%Y-%m-%d %H:%M')}: *'{d.reason}'*")
         else:
             lines.append("- *No formal electronic batch decision entry recorded.*")
 
@@ -197,7 +220,7 @@ class QualityCopilotEngine:
             for cd in confirmed_defects:
                 lines.append(
                     f"- **[DEFECT: {cd.defect_code}]** — **{cd.defect_category}** ({cd.severity} Severity) | Status: `{cd.review_status}`\n"
-                    f"  *Description*: \'{cd.description}\'"
+                    f"  *Description*: '{cd.description}'"
                 )
         else:
             lines.append("- *No human-confirmed defects currently linked to this batch.*")
@@ -223,7 +246,7 @@ class QualityCopilotEngine:
         open_actions = [a for a in actions if a.status in ["PENDING", "IN_PROGRESS"]]
         if open_actions:
             for a in open_actions:
-                lines.append(f"- **[CAPA: {a.action_code}]**: \'{a.title}\' | Status: `{a.status}` | Target Date: {a.target_date.strftime('%Y-%m-%d')}")
+                lines.append(f"- **[CAPA: {a.action_code}]**: '{a.title}' | Status: `{a.status}` | Target Date: {a.target_date.strftime('%Y-%m-%d')}")
         else:
             lines.append("- *No open corrective actions blocking release.*")
 
@@ -264,7 +287,7 @@ class QualityCopilotEngine:
             for cd in confirmed:
                 badge = "CRITICAL" if cd.severity == "CRITICAL" else ("MAJOR" if cd.severity == "MAJOR" else "MINOR")
                 lines.append(f"- **[DEFECT: {cd.defect_code}]** ({badge}) — **{cd.defect_category}**")
-                lines.append(f"  *Description*: \'{cd.description}\' | Review Status: `{cd.review_status}`")
+                lines.append(f"  *Description*: '{cd.description}' | Review Status: `{cd.review_status}`")
         else:
             lines.append("- *Zero human-confirmed defects recorded for this batch.*")
 

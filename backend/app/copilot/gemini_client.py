@@ -12,18 +12,21 @@ CRITICAL OPERATIONAL RULES:
 2. DISTINGUISH FACTS VS PREDICTIONS: Clearly distinguish human-confirmed defects from CNN model predictions. Label model predictions as "[CNN Model Prediction - Not Human Confirmed]".
 3. NO FABRICATION: If the requested information or batch records are missing or not in the retrieved context, explicitly state: "Required quality records are unavailable in the system database for this query." Do NOT fabricate batch numbers, defect counts, or procedures.
 4. SAFETY & COMPLIANCE GUARD: You are strictly an advisory decision-support assistant. You are PROHIBITED from autonomously certifying product quality, releasing batches, closing defects, or modifying compliance states. All corrective action plans are DRAFTS for authorized human review (ISO 9001 / IATF 16949).
-5. CITATIONS: Reference source record IDs (e.g., [BATCH: B-2026-104], [DEFECT: DEF-001], [CAPA: CAPA-001], [PROCEDURE: DOC-SOP-001]) whenever citing facts.
+5. CITATIONS: Reference source record IDs (e.g., [BATCH: B-2026-104], [DEFECT: DEF-0001], [CAPA: CAPA-0001], [PROCEDURE: DOC-SOP-001]) whenever citing facts.
 """
 
 class GeminiCopilotClient:
     def __init__(self):
-        self._api_key = (settings.GEMINI_API_KEY or "").strip()
-        self._client = None
         self._init_client()
 
     def _init_client(self):
+        self._api_key = (settings.GEMINI_API_KEY or "").strip('"\' \t\r\n')
+        self._client = None
+        self._config_error = None
+
         if not self._api_key:
-            logger.info("[Gemini Client] GEMINI_API_KEY not configured. Falling back to grounded deterministic RAG.")
+            self._config_error = "GEMINI_API_KEY is not configured in backend/.env"
+            logger.info("[Gemini Client] GEMINI_API_KEY not configured. Deterministic RAG fallback will be used.")
             return
 
         try:
@@ -31,12 +34,17 @@ class GeminiCopilotClient:
             self._client = genai.Client(api_key=self._api_key)
             logger.info("[Gemini Client] Google GenAI SDK client initialized.")
         except Exception as e:
-            logger.warning(f"[Gemini Client] Failed to initialize Google GenAI SDK: {e}")
+            self._config_error = f"Failed to initialize Google GenAI SDK: {e}"
+            logger.warning(f"[Gemini Client] {self._config_error}")
             self._client = None
 
     @property
-    def is_available(self) -> bool:
-        return self._client is not None and bool(self._api_key)
+    def is_configured(self) -> bool:
+        return bool(self._api_key) and self._client is not None
+
+    def get_fallback_provider_label(self, reason: Optional[str] = None) -> str:
+        msg = reason or self._config_error or "Deterministic Mode"
+        return f"ForgeSight Grounded RAG Synthesizer (Fallback: {msg})"
 
     def generate_grounded_response(
         self,
@@ -44,13 +52,15 @@ class GeminiCopilotClient:
         retrieved_context: Dict[str, Any]
     ) -> Tuple[Optional[str], Optional[str], str]:
         """
-        Calls the Gemini API with structured retrieved context.
-        Returns (generated_text, error_message, provider_name).
+        Calls Google Gemini API with retrieved context.
+        Returns:
+            (generated_text, error_message, provider_name)
         """
-        if not self.is_available:
-            return None, "GEMINI_API_KEY is not configured or client initialization failed.", "ForgeSight Grounded Governance Engine"
+        if not self.is_configured:
+            reason = self._config_error or "GEMINI_API_KEY is missing or unconfigured"
+            return None, reason, self.get_fallback_provider_label(reason)
 
-        # Format prompt with retrieved evidence
+        # Format grounded context block
         facts_block = "\n".join(retrieved_context.get("confirmed_facts", [])) or "None found."
         preds_block = "\n".join(retrieved_context.get("cnn_predictions", [])) or "None recorded."
         proc_block = "\n\n".join(retrieved_context.get("procedural_excerpts", [])) or "None relevant."
@@ -81,7 +91,7 @@ Include section headers, bullet points, source citations [RECORD_TYPE: ID], and 
 
         # Try gemini-2.5-flash first, then fallback to gemini-1.5-flash
         models_to_try = ["gemini-2.5-flash", "gemini-1.5-flash"]
-        last_error = None
+        last_error_msg = None
 
         for model_name in models_to_try:
             try:
@@ -95,11 +105,21 @@ Include section headers, bullet points, source citations [RECORD_TYPE: ID], and 
                     )
                 )
                 if response and response.text:
-                    return response.text, None, f"Google Gemini ({model_name}) + ForgeSight RAG"
+                    provider_label = f"Google Gemini ({model_name}) + ForgeSight RAG"
+                    return response.text, None, provider_label
             except Exception as e:
-                last_error = str(e)
-                logger.warning(f"[Gemini Client] Model {model_name} invocation error: {e}")
+                err_str = str(e)
+                if "API_KEY_INVALID" in err_str or "API key not valid" in err_str:
+                    last_error_msg = "Google Gemini API key is invalid or unrecognized"
+                elif "RESOURCE_EXHAUSTED" in err_str or "429" in err_str:
+                    last_error_msg = "Google Gemini API rate limit exceeded (HTTP 429)"
+                elif "DEADLINE_EXCEEDED" in err_str or "timed out" in err_str.lower():
+                    last_error_msg = "Google Gemini request timed out"
+                else:
+                    last_error_msg = f"Gemini API error: {err_str[:120]}"
+                logger.warning(f"[Gemini Client] Error invoking {model_name}: {err_str}")
 
-        return None, last_error or "Gemini API request failed", "ForgeSight Grounded Governance Engine"
+        fallback_label = self.get_fallback_provider_label(last_error_msg)
+        return None, last_error_msg or "Gemini API unavailable", fallback_label
 
 gemini_client = GeminiCopilotClient()
