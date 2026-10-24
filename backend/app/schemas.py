@@ -56,7 +56,7 @@ class Token(BaseModel):
 class ProductCreate(BaseModel):
     code: str
     name: str
-    category: str = "Metal Castings"
+    category: str = "Hot-Rolled Steel Products"
     description: Optional[str] = None
 
 class ProductUpdate(BaseModel):

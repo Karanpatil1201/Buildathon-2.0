@@ -3,7 +3,7 @@ from pathlib import Path
 from app.models import Inspection
 from app.database import SessionLocal
 
-def test_domain_gate_accepts_valid_casting_sample(client, operator_token):
+def test_domain_gate_accepts_valid_steel_sample(client, operator_token):
     headers = {"Authorization": f"Bearer {operator_token}"}
     
     # Preset steel sample

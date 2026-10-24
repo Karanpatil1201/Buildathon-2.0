@@ -308,10 +308,10 @@ export const BeforeAfterComparison: React.FC<BeforeAfterComparisonProps> = ({
               Known Defect-Free Reference
             </span>
             <h4 className="text-sm font-semibold text-[#2B2A27] mt-1">
-              {comparison.reference_image.label || 'Clean Industrial Casting Standard'}
+              {comparison.reference_image.label || 'Clean Industrial Steel Standard'}
             </h4>
             <p className="text-xs text-[#6A6964] mt-0.5 max-w-xl">
-              {comparison.reference_image.description || 'Authentic defect-free casting surface used as comparative baseline for metallurgical texture and finish.'}
+              {comparison.reference_image.description || 'Authentic defect-free steel strip surface used as comparative baseline for metallurgical texture and finish.'}
             </p>
           </div>
         </div>

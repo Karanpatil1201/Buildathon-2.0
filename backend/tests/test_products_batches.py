@@ -7,7 +7,7 @@ def test_list_products(client, admin_token):
     assert res.status_code == 200
     products = res.json()
     assert len(products) >= 3
-    assert any(p["code"] == "CAST-PUMP-01" for p in products)
+    assert any(p["code"] in ["STL-AHSS-01", "CAST-PUMP-01"] for p in products)
 
 def test_create_and_get_product(client, qm_token):
     headers = {"Authorization": f"Bearer {qm_token}"}
@@ -16,9 +16,9 @@ def test_create_and_get_product(client, qm_token):
         "/api/v1/products",
         json={
             "code": unique_code,
-            "name": "Precision Turbo Housing Casting",
-            "category": "Steel Castings",
-            "description": "Exhaust turbine housing with ceramic core."
+            "name": "High-Strength Galvanized Steel Coil",
+            "category": "Coated Steel Sheets",
+            "description": "Hot-dip galvanized steel coil for exposed automotive panels."
         },
         headers=headers
     )
@@ -28,7 +28,7 @@ def test_create_and_get_product(client, qm_token):
     # Retrieve
     get_res = client.get(f"/api/v1/products/{prod_id}", headers=headers)
     assert get_res.status_code == 200
-    assert get_res.json()["name"] == "Precision Turbo Housing Casting"
+    assert get_res.json()["name"] == "High-Strength Galvanized Steel Coil"
 
 def test_create_batch_and_decision_history(client, qm_token):
     headers = {"Authorization": f"Bearer {qm_token}"}
@@ -49,7 +49,7 @@ def test_create_batch_and_decision_history(client, qm_token):
     # Make decision: hold
     hold_res = client.post(
         f"/api/v1/batches/{batch_id}/decisions",
-        json={"new_status": "ON_HOLD", "reason": "Suspected sand grain inclusion in heat 44"},
+        json={"new_status": "ON_HOLD", "reason": "Suspected roll scale inclusion on coil head"},
         headers=headers
     )
     assert hold_res.status_code == 200

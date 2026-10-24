@@ -514,8 +514,8 @@ def get_reinspection_comparison(
 
     reference_info = {
         "filename": ref_filename if ref_available else None,
-        "label": "Golden Standard / Known Defect-Free Reference",
-        "description": "Authentic defect-free industrial casting reference surface",
+        "label": "Golden Standard / Known Defect-Free Steel Surface",
+        "description": "Authentic defect-free industrial steel surface reference strip",
         "url": f"/api/v1/inspections/eval-samples/{ref_filename}" if ref_available else None
     }
 

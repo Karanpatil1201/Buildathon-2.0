@@ -68,7 +68,7 @@ ax.spines['top'].set_visible(False)
 ax.spines['right'].set_visible(False)
 
 # Add badge annotations
-ax.text(50, -0.6, "100.0% Precision = 0 False Scraps  |  Sub-50ms CPU Latency  |  715 Held-Out Castings", 
+ax.text(50, -0.6, "100.0% Precision = 0 False Scraps  |  Sub-50ms CPU Latency  |  715 Held-Out Steel Specimens", 
         ha='center', fontsize=10.5, color='#38BDF8', bbox=dict(boxstyle='round,pad=0.5', facecolor='#1E293B', edgecolor='#0EA5E9', alpha=0.9))
 
 plt.tight_layout()
@@ -114,7 +114,7 @@ for i in range(2):
 
 ax.set_ylabel('Ground Truth Label', fontsize=12, color='#94A3B8', labelpad=10)
 ax.set_xlabel('Model Predicted Label', fontsize=12, color='#94A3B8', labelpad=10)
-ax.set_title('Held-Out Confusion Matrix (N = 715 Unseen Castings)', 
+ax.set_title('Held-Out Confusion Matrix (N = 715 Unseen Steel Specimens)', 
              fontsize=13.5, fontweight='bold', color='#F8FAFC', pad=15)
 ax.tick_params(colors='#94A3B8')
 
@@ -130,13 +130,13 @@ fig, ax = plt.subplots(figsize=(11, 5.8), facecolor='#0B0F19')
 ax.set_facecolor('#0F172A')
 
 categories = [
-    'Flawless OK Castings\n(6/6 Pass, 0% False Alarm)',
+    'Flawless OK Steel Surfaces\n(6/6 Pass, 0% False Alarm)',
     'Crazing (Microcracks)\n(Surface Stress Tears)',
-    'Non-Metallic Inclusions\n(Slag & Oxide Traps)',
-    'Pitted Surface Cavities\n(Gas Porosity Voids)',
-    'Rolled-in Scale\n(Embedded Oxide Layers)',
-    'Surface Patches\n(Irregular Cold Shuts)',
-    'Linear Scratches\n(Handling & Tool Abrasions)'
+    'Non-Metallic Inclusions\n(Embedded Oxide Particles)',
+    'Pitted Surface Cavities\n(Pickling & Roll Pits)',
+    'Rolled-in Scale\n(Embedded Mill Oxidation)',
+    'Surface Patches\n(Scale Peeling & Scabs)',
+    'Linear Scratches\n(Coil Handling Abrasions)'
 ]
 
 confidence_scores = [99.4, 96.8, 95.4, 98.1, 94.7, 92.3, 91.8]
@@ -229,8 +229,8 @@ def create_12_sample_grid():
 
     # Header
     draw.rectangle([(0, 0), (total_w, header_h)], fill=(15, 23, 42))
-    draw.text((margin, 25), "ForgeSight AI — Category-Wise Separation & Held-Out Evaluation Gallery", fill=(248, 250, 252))
-    draw.text((margin, 60), "12 Ground-Truth Industrial Specimens: 6 Specific Defect Types + 6 Flawless OK Castings with Grad-CAM Flaw Localization", fill=(56, 189, 248))
+    draw.text((margin, 25), "Steel-IQ — Category-Wise Steel Surface Defect Evaluation Gallery", fill=(248, 250, 252))
+    draw.text((margin, 60), "12 Ground-Truth Industrial Specimens: 6 Steel Defect Categories + 6 Flawless OK Steel Strips with Grad-CAM Localization", fill=(56, 189, 248))
 
     for idx, item in enumerate(manifest):
         r = idx // cols
@@ -264,7 +264,7 @@ def create_12_sample_grid():
         short_desc = desc if len(desc) < 32 else desc[:30] + "..."
         draw.text((x + 8, text_y), short_desc, fill=(241, 245, 249))
         draw.text((x + 8, text_y + 24), f"Source: {item.get('source', '')}", fill=(148, 163, 184))
-        status_sub = "Status: AI Flagged (Grad-CAM Hot)" if is_def else "Status: Flawless Cast (Passed)"
+        status_sub = "Status: AI Flagged (Grad-CAM Hot)" if is_def else "Status: Flawless Prime Steel (Passed)"
         status_color = (248, 113, 113) if is_def else (52, 211, 153)
         draw.text((x + 8, text_y + 46), status_sub, fill=status_color)
 

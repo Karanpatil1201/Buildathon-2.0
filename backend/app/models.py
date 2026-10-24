@@ -33,7 +33,7 @@ class Product(Base):
     id = Column(Integer, primary_key=True, index=True)
     code = Column(String(50), unique=True, index=True, nullable=False)
     name = Column(String(120), nullable=False)
-    category = Column(String(80), nullable=False, default="Metal Castings")
+    category = Column(String(80), nullable=False, default="Hot-Rolled Steel Products")
     description = Column(Text, nullable=True)
     is_archived = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)

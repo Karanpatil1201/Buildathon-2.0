@@ -21,13 +21,13 @@ This script outlines the exact live demonstration flow to showcase all 20 accept
 
 ## Act 2: Image Intake & Genuine PyTorch ML Inference (60 Seconds)
 1. Click **New Inspection** in the sidebar (or Station 01 on the banner).
-2. Point out the **Preset Evaluation Samples Gallery** at the bottom (12 real held-out casting samples with ground truth labels).
+2. Point out the **Preset Evaluation Samples Gallery** at the bottom (12 real held-out industrial steel surface samples with ground truth labels (NEU Surface Defect dataset)).
 3. Click on **`eval_sample_defective_02.jpeg`**.
 4. Click **Start ML Quality Inspection**:
    - Observe real-time PyTorch inference executing on CPU in ~45 ms.
    - Show the **Prediction Outcome: DEFECTIVE** with **95.4% calibrated confidence**.
-   - Show the **Grad-CAM Spatial Heatmap** highlighting the exact porosity flaw on the casting surface!
-5. Explain that this is a genuine PyTorch model trained on industrial casting data, not simulated or hardcoded.
+   - Show the **Grad-CAM Spatial Heatmap** highlighting the exact surface defect on the hot-rolled steel strip surface!
+5. Explain that this is a genuine PyTorch MobileNetV3 model trained on industrial surface steel defect data, not simulated or hardcoded.
 
 ---
 

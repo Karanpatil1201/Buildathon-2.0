@@ -11,7 +11,7 @@ def test_reinspection_full_before_after_comparison_workflow(client, operator_tok
         "batch_id": 1,
         "item_identifier": "COIL-REINSP-001",
         "sample_preset": "eval_sample_defective_01.jpeg",
-        "notes": "Original defect detected on casting line 1"
+        "notes": "Original defect detected on hot strip mill line 1"
     }
     res_orig = client.post("/api/v1/inspections", data=data_orig, headers=headers_insp)
     assert res_orig.status_code == 201

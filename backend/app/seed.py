@@ -83,22 +83,22 @@ def seed_database(db: Session):
 
     # 2. Products
     p1 = Product(
-        code="CAST-PUMP-01",
-        name="Submersible Pump Impeller Casting",
-        category="Ductile Iron Castings",
-        description="High-flow centrifugal impeller for industrial submersible slurry pumps."
+        code="STL-AHSS-01",
+        name="Automotive Grade AHSS Steel Strip",
+        category="Cold-Rolled Steel Coils",
+        description="Advanced High-Strength Steel (AHSS) strip for automotive structural chassis components."
     )
     p2 = Product(
-        code="CAST-BRK-02",
-        name="Automotive Brake Rotor Disc",
-        category="Grey Iron Castings",
-        description="Ventilated disc brake casting for heavy commercial vehicles."
+        code="STL-PLT-02",
+        name="Structural Heavy Steel Plate (S355JR)",
+        category="Hot-Rolled Steel Plates",
+        description="High-yield structural hot-rolled carbon steel plate for construction and marine fabrication."
     )
     p3 = Product(
-        code="CAST-VALV-03",
-        name="High-Pressure Valve Body",
-        category="Steel Castings",
-        description="Pressure-containment valve body rated for 3000 PSI hydraulic systems."
+        code="STL-SHT-03",
+        name="Deep Drawing Cold-Rolled Sheet (DC04)",
+        category="Cold-Rolled Steel Sheets",
+        description="Extra deep drawing quality flat cold-rolled steel sheet with high formability."
     )
     db.add_all([p1, p2, p3])
     db.commit()
@@ -123,7 +123,7 @@ def seed_database(db: Session):
         quantity=180,
         production_date=now - timedelta(days=2),
         status="ON_HOLD",
-        decision_notes="Quarantined due to repeated blowhole defects on casting perimeter. Awaiting tooling re-calibration.",
+        decision_notes="Quarantined due to repeated surface inclusion and rolled-in scale defects. Awaiting roll stand recalibration.",
         decided_by_user_id=qm.id,
         decided_at=now - timedelta(days=1)
     )
@@ -145,14 +145,14 @@ def seed_database(db: Session):
         decided_by_user_id=qm.id,
         previous_status="IN_PROGRESS",
         new_status="ON_HOLD",
-        reason="Defect threshold exceeded (2 confirmed blowhole defects). Placed on quality quarantine."
+        reason="Defect threshold exceeded (2 confirmed surface inclusion defects). Placed on quality quarantine."
     )
     d2 = BatchDecision(
         batch_id=b101.id,
         decided_by_user_id=qm.id,
         previous_status="IN_PROGRESS",
         new_status="RELEASED",
-        reason="Certified conforming to ASTM A536 standards."
+        reason="Certified conforming to ASTM A568 / EN 10163 steel surface standards."
     )
     db.add_all([d1, d2])
 
@@ -179,7 +179,7 @@ def seed_database(db: Session):
         batch_id=b104.id,
         item_identifier="ITEM-0881",
         inspector_id=inspector.id,
-        notes="Visual inspection of flange surface. Deep porosity observed near gate.",
+        notes="Visual inspection of hot-rolled strip surface. Non-metallic oxide inclusion observed near edge.",
         status="CONFIRMED_DEFECT",
         created_at=now - timedelta(days=2, hours=4)
     )
@@ -190,7 +190,7 @@ def seed_database(db: Session):
     img1 = ImageEvidence(
         inspection_id=insp1.id,
         file_path=file1_name,
-        original_filename="casting_flange_0881.jpeg",
+        original_filename="steel_strip_0881.jpeg",
         file_size_bytes=45230,
         mime_type="image/jpeg",
         sha256_hash="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -218,8 +218,8 @@ def seed_database(db: Session):
         inspection_id=insp1.id,
         reviewer_id=qm.id,
         decision="CONFIRMED_DEFECT",
-        reason="Blowhole defect confirmed",
-        notes="Surface blowhole exceeds 2.5mm tolerance spec. Quarantined part for remediation.",
+        reason="Non-metallic inclusion confirmed",
+        notes="Surface oxide inclusion exceeds ASTM E45 Class A specification. Quarantined coil for remediation.",
         created_at=now - timedelta(days=2, hours=2)
     )
     db.add(rev1)
@@ -228,9 +228,9 @@ def seed_database(db: Session):
         defect_code="DEF-0001",
         inspection_id=insp1.id,
         batch_id=b104.id,
-        defect_category="BLOWHOLE",
+        defect_category="INCLUSION",
         severity="CRITICAL",
-        description="Gas porosity blowhole on mounting flange. Exceeds ASTM A536 Class 2 limit.",
+        description="Non-metallic oxide inclusion embedded in strip surface exceeding ASTM A568 / EN 10163 surface spec.",
         review_status="ACTION_ASSIGNED",
         created_at=now - timedelta(days=2, hours=2)
     )
@@ -242,12 +242,12 @@ def seed_database(db: Session):
     act1 = CorrectiveAction(
         action_code="CAPA-0001",
         defect_id=defect1.id,
-        title="Check sand core venting and mould moisture levels",
-        description="Inspect degassing vents on line 3 mould pattern. Verify moisture content of green sand is below 3.2%.",
+        title="Check deoxidation shroud seal and roll stand lubrication",
+        description="Inspect Argon shroud on hot strip line to eliminate oxide inclusions. Verify roll work lubrication.",
         assigned_to_user_id=supervisor.id,
         target_date=now - timedelta(days=1),  # Past due!
         status="PENDING",
-        notes="Tooling technician dispatched. Sand moisture logs pending review.",
+        notes="Mill technician dispatched. Roll stand wear logs and shroud seals pending verification.",
         created_at=now - timedelta(days=2, hours=1)
     )
     db.add(act1)
@@ -265,7 +265,7 @@ def seed_database(db: Session):
         batch_id=b101.id,
         item_identifier="ITEM-0720",
         inspector_id=inspector.id,
-        notes="Routine post-shakeout inspection. Surface clean.",
+        notes="Routine post-rolling coil inspection. Surface clean and prime.",
         status="PASSED",
         created_at=now - timedelta(days=5)
     )
@@ -276,7 +276,7 @@ def seed_database(db: Session):
     img2 = ImageEvidence(
         inspection_id=insp2.id,
         file_path=file2_name,
-        original_filename="impeller_casting_0720.jpeg",
+        original_filename="steel_strip_0720.jpeg",
         file_size_bytes=42100,
         mime_type="image/jpeg",
         sha256_hash="d41d8cd98f00b204e9800998ecf8427e1b7852b855e3b0c44298fc1c149afbf4"
@@ -303,8 +303,8 @@ def seed_database(db: Session):
         inspection_id=insp2.id,
         reviewer_id=qm.id,
         decision="NO_DEFECT_CONFIRMED",
-        reason="Clean casting surface",
-        notes="No porosity or inclusions detected. Part approved.",
+        reason="Clean steel strip surface",
+        notes="No inclusions, crazing, or scale detected. Prime surface quality approved.",
         created_at=now - timedelta(days=5)
     )
     db.add(rev2)
@@ -322,7 +322,7 @@ def seed_database(db: Session):
         batch_id=b108.id,
         item_identifier="ITEM-0915",
         inspector_id=inspector.id,
-        notes="Brake disc friction ring visual test. Minor pit near perimeter.",
+        notes="Structural steel plate surface optical intake. Surface patch defect observed near edge.",
         status="UNDER_REVIEW",
         created_at=now - timedelta(hours=3)
     )
@@ -333,7 +333,7 @@ def seed_database(db: Session):
     img3 = ImageEvidence(
         inspection_id=insp3.id,
         file_path=file3_name,
-        original_filename="rotor_disc_0915.jpeg",
+        original_filename="steel_plate_0915.jpeg",
         file_size_bytes=46700,
         mime_type="image/jpeg",
         sha256_hash="ca495991b7852b855e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934"

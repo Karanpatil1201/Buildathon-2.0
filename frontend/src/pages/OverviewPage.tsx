@@ -67,8 +67,8 @@ const DATASET_DEFECT_TAXONOMY: DefectTaxonomyItem[] = [
     name: 'Inclusions (Non-Metallic Impurities)',
     severity: 'HIGH',
     visualFeatures: 'Isolated dark non-metallic slag or alumina particles embedded in matrix.',
-    cause: 'Slag entrapment in continuous casting tundish or deoxidation precipitate flotation failure.',
-    remediation: 'Check continuous casting tundish purity & ladle shroud inert gas seal.',
+    cause: 'Oxide entrapment during hot rolling or deoxidation precipitate flotation failure.',
+    remediation: 'Check argon shroud seal on hot strip mill & descaling water jet pressure.',
     color: '#E59866',
   },
   {

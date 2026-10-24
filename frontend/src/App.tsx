@@ -27,7 +27,7 @@ import {
 
 const PAGE_TITLES: Record<string, string> = {
   overview: 'Plant Quality Overview & Telemetry',
-  digital_twin: '3D Continuous Casting Line Twin',
+  digital_twin: '3D Continuous Steel Rolling Mill Twin',
   batches: 'Products & Production Batches',
   new_inspection: 'Optical Ingestion & Neural Inference',
   review: 'Visual Evidence Review Workbench',
