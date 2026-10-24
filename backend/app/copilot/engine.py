@@ -4,28 +4,47 @@ from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 
-from app.models import User, Batch, Inspection, ConfirmedDefect, CorrectiveAction, InferenceAttempt, HumanReview
+from app.models import User, Batch, BatchDecision, Inspection, ConfirmedDefect, CorrectiveAction, InferenceAttempt, HumanReview
 from app.schemas import CopilotResponse, CopilotCitation
 from app.config import settings
+from app.copilot.retriever import rag_retriever
+from app.copilot.gemini_client import gemini_client
 
 class QualityCopilotEngine:
+    """
+    GenAI + Lightweight RAG Quality Copilot Engine for ForgeSight AI / Steel-IQ.
+    
+    1. Gathers authorized structured facts (batches, confirmed defects, CAPAs) and local SOPs.
+    2. Explicitly separates human-confirmed defects from CNN model predictions.
+    3. Leverages official Google GenAI SDK (Gemini) when configured.
+    4. Provides robust deterministic grounded RAG fallback when Gemini is offline or unconfigured.
+    5. Enforces safety guardrails: no autonomous batch release or defect closure.
+    """
     def __init__(self):
         self.provider = settings.GENAI_PROVIDER
 
-    def process_query(self, query_str: str, current_user: User, db: Session, batch_param: Optional[str] = None) -> CopilotResponse:
+    def process_query(
+        self,
+        query_str: str,
+        current_user: User,
+        db: Session,
+        batch_param: Optional[str] = None
+    ) -> CopilotResponse:
         query_lower = query_str.lower().strip()
-        citations: List[CopilotCitation] = []
-        grounded_stats: Dict[str, Any] = {}
 
-        # 1. Authority Guard: Block autonomous state mutation attempts
-        if any(w in query_lower for w in ["certify", "override defect", "close defect", "approve batch"]) or \
-           ("release" in query_lower and any(b in query_lower for b in ["batch", "it", "product", "hold"])):
+        # 1. Safety & Governance Guard: Block autonomous state mutation attempts
+        mutation_verbs = ["certify", "override defect", "close defect", "approve batch", "quarantine batch", "unhold batch"]
+        is_release_attempt = "release" in query_lower and any(b in query_lower for b in ["batch", "it", "product", "hold", "coil", "heat"])
+        if any(w in query_lower for w in mutation_verbs) or is_release_attempt:
             return CopilotResponse(
                 query=query_str,
                 answer=(
-                    "**Safety & Compliance Guard Triggered**: GenAI is strictly a decision-support assistant and "
-                    "is **prohibited from autonomously certifying product quality, releasing batches, or closing defects**. "
-                    "Batch disposition requires physical human review and authorization by an assigned Quality Manager per standard ISO 9001 quality assurance protocols."
+                    "**Safety & Compliance Guard Triggered**: GenAI is strictly an advisory decision-support assistant and "
+                    "is **prohibited from autonomously certifying product quality, releasing batches, closing defects, or changing compliance states**.\n\n"
+                    "- **Standard Protocol**: Batch disposition and defect closure require physical human inspection and authorization "
+                    "by an assigned Quality Manager per standard ISO 9001 / IATF 16949 quality assurance protocols.\n"
+                    "- **Permitted Action**: You can ask me to *\"Draft a corrective-action plan\"* or *\"Summarize why this batch is on hold\"* "
+                    "for human review."
                 ),
                 citations=[],
                 grounded_stats={"safety_guard_triggered": True, "policy": "Human-in-the-loop mandatory"},
@@ -33,366 +52,406 @@ class QualityCopilotEngine:
                 authorized=True
             )
 
-        # 2. Extract potential batch identifier (e.g. B-2026-104, B-104, B-UNKNOWN-999)
-        extracted_batch = batch_param
-        if not extracted_batch:
-            # Check for "batch <id>"
-            m_after_batch = re.search(r"\bbatch\s+([a-zA-Z0-9_\-]+)\b", query_str, re.IGNORECASE)
-            if m_after_batch and m_after_batch.group(1).lower() not in ["summary", "status", "report", "the"]:
-                extracted_batch = m_after_batch.group(1).upper()
-            else:
-                m_b = re.search(r"\b(B[-\s]?\d+[-\w]*)\b", query_str, re.IGNORECASE)
-                if m_b and m_b.group(1).lower() != "batch":
-                    extracted_batch = m_b.group(1).upper()
+        # 2. Retrieve authorized application context via Lightweight RAG Retriever
+        retrieved = rag_retriever.retrieve_context(
+            query_str=query_str,
+            current_user=current_user,
+            db=db,
+            batch_param=batch_param
+        )
 
-        # Check for specific intents:
-        # A. Batch Summary Intent
-        if ("summarize" in query_lower and "batch" in query_lower) or extracted_batch:
-            return self._handle_batch_summary(extracted_batch, query_str, db)
+        citations: List[CopilotCitation] = retrieved.get("citations", [])
+        stats: Dict[str, Any] = retrieved.get("stats", {})
 
-        # B. Overdue Actions Intent
-        if "overdue" in query_lower or ("corrective" in query_lower and "action" in query_lower and "late" in query_lower):
-            return self._handle_overdue_actions(query_str, db)
+        # 3. Check if target batch was specified but does not exist
+        target_batch_requested = batch_param or rag_retriever.extract_batch_id(query_str)
+        if target_batch_requested and not retrieved.get("target_batch_number"):
+            missing_msg = (
+                f"**Record Not Found (Zero Hallucination Policy)**:\n\n"
+                f"No batch matching identifier `{target_batch_requested}` exists in the active database.\n\n"
+                f"- **Searched Entities**: Batches, Coils, Inspection Lots.\n"
+                f"- **Result**: Zero matching records found.\n\n"
+                f"Please verify the batch number in the Products & Batches registry before querying quality records."
+            )
+            return CopilotResponse(
+                query=query_str,
+                answer=missing_msg,
+                citations=[],
+                grounded_stats={"requested_batch": target_batch_requested, "found": False},
+                provider="ForgeSight Grounded Governance Engine",
+                authorized=True
+            )
 
-        # C. Similar Defect History
-        if "similar" in query_lower or "previously recorded" in query_lower or "recurring" in query_lower or "history" in query_lower:
-            return self._handle_similar_defects(query_str, db)
-
-        # D. What Needs Attention Today / Triage
-        if "attention" in query_lower or "today" in query_lower or "triage" in query_lower or "urgent" in query_lower:
-            return self._handle_triage_attention(query_str, db)
-
-        # E. Draft Quality Report
-        if "draft" in query_lower or "report" in query_lower:
-            return self._handle_draft_report(query_str, db)
-
-        # Default fallback: Comprehensive Grounded Plant Status
-        return self._handle_general_status(query_str, db)
-
-    def _handle_batch_summary(self, batch_identifier: Optional[str], query_str: str, db: Session) -> CopilotResponse:
-        if not batch_identifier:
-            # Pick latest batch
-            latest_b = db.query(Batch).order_by(Batch.created_at.desc()).first()
-            if not latest_b:
+        # 4. Attempt Generation via Google GenAI SDK (Gemini)
+        if gemini_client.is_available:
+            gemini_text, gemini_error, provider_name = gemini_client.generate_grounded_response(
+                query=query_str,
+                retrieved_context=retrieved
+            )
+            if gemini_text:
                 return CopilotResponse(
                     query=query_str,
-                    answer="No batches have been registered in the database yet. Please register a product and batch first.",
-                    citations=[],
-                    grounded_stats={},
-                    provider="grounded_deterministic_synthesizer"
+                    answer=gemini_text,
+                    citations=citations,
+                    grounded_stats=stats,
+                    provider=provider_name,
+                    authorized=True
                 )
-            batch_identifier = latest_b.batch_number
 
-        # Query batch
-        batch = db.query(Batch).filter(
-            or_(
-                Batch.batch_number.ilike(f"%{batch_identifier}%"),
-                Batch.batch_number == batch_identifier
-            )
-        ).first()
+        # 5. Deterministic Grounded RAG Synthesis (Guaranteed zero hallucination & offline reliability)
+        answer = self._synthesize_grounded_response(query_lower, query_str, retrieved, db)
+        provider_label = "ForgeSight Grounded RAG Synthesizer"
+        if gemini_client._api_key and not gemini_client.is_available:
+            provider_label += " (Gemini Key Invalid/Offline - Deterministic Mode)"
 
-        # If not found directly, extract digits (e.g. '104' from 'B-104')
-        if not batch:
-            digits = re.findall(r"\d+", batch_identifier)
-            if digits:
-                num_sub = digits[-1]
-                batch = db.query(Batch).filter(Batch.batch_number.ilike(f"%{num_sub}%")).first()
-
-        if not batch:
-            return CopilotResponse(
-                query=query_str,
-                answer=(
-                    f"**Record Not Found**: No batch matching identifier `'{batch_identifier}'` exists in the database. "
-                    "Evidence-based quality copilot cannot summarize non-existent records. "
-                    "Please check the batch number in the Products & Batches registry."
-                ),
-                citations=[],
-                grounded_stats={"requested_identifier": batch_identifier, "found": False},
-                provider="grounded_deterministic_synthesizer"
-            )
-
-        citations = [
-            CopilotCitation(record_type="BATCH", record_id=batch.batch_number, label=f"Batch {batch.batch_number} ({batch.product.name})")
-        ]
-
-        # Calculate exact counts
-        inspections = db.query(Inspection).filter(Inspection.batch_id == batch.id).all()
-        distinct_items = len(set(i.item_identifier for i in inspections))
-        confirmed_defects = db.query(ConfirmedDefect).filter(ConfirmedDefect.batch_id == batch.id).all()
-        
-        # Distinguish machine predictions from confirmed defects
-        unreviewed_ai_defects = 0
-        for insp in inspections:
-            if insp.status == "INFERENCE_COMPLETED":
-                latest_inf = insp.inference_attempts[0] if insp.inference_attempts else None
-                if latest_inf and latest_inf.raw_prediction == "DEFECTIVE":
-                    unreviewed_ai_defects += 1
-
-        defect_codes = []
-        for cd in confirmed_defects:
-            citations.append(CopilotCitation(record_type="DEFECT", record_id=cd.defect_code, label=f"{cd.defect_code} ({cd.defect_category} - {cd.severity})"))
-            defect_codes.append(f"`[{cd.defect_code}]` ({cd.defect_category}, Severity: {cd.severity})")
-
-        # Open actions for this batch
-        actions = (
-            db.query(CorrectiveAction)
-            .join(ConfirmedDefect)
-            .filter(ConfirmedDefect.batch_id == batch.id)
-            .all()
-        )
-        action_codes = []
-        now = datetime.utcnow()
-        overdue_count = 0
-        for act in actions:
-            is_od = act.target_date < now and act.status in ["PENDING", "IN_PROGRESS"]
-            if is_od:
-                overdue_count += 1
-            citations.append(CopilotCitation(record_type="ACTION", record_id=act.action_code, label=f"{act.action_code}: {act.title}"))
-            action_codes.append(f"`[{act.action_code}]` {act.title} (Status: {act.status}{', OVERDUE' if is_od else ''})")
-
-        defect_rate = (len(confirmed_defects) / distinct_items * 100) if distinct_items > 0 else 0.0
-
-        stats = {
-            "batch_number": batch.batch_number,
-            "product": batch.product.name,
-            "batch_status": batch.status,
-            "total_inspected_items": distinct_items,
-            "confirmed_defects_count": len(confirmed_defects),
-            "unreviewed_ai_flagged": unreviewed_ai_defects,
-            "defect_rate_pct": round(defect_rate, 1),
-            "corrective_actions_count": len(actions),
-            "overdue_actions_count": overdue_count
-        }
-
-        narrative = (
-            f"### Grounded Quality Summary: Batch `[{batch.batch_number}]`\n\n"
-            f"- **Product**: `{batch.product.code}` — **{batch.product.name}**\n"
-            f"- **Batch Status**: **{batch.status}** (Registered Quantity: {batch.quantity} units)\n"
-            f"- **Inspected Items**: **{distinct_items}** distinct components evaluated\n"
-            f"- **Confirmed Defects**: **{len(confirmed_defects)}** (Defect Rate: **{defect_rate:.1f}%**)\n"
-            f"- **Unreviewed AI Suggestions**: **{unreviewed_ai_defects}** item(s) flagged by ML awaiting human sign-off\n\n"
-        )
-
-        if confirmed_defects:
-            narrative += "**Confirmed Defect Findings**:\n" + "\n".join([f"- {d}" for d in defect_codes]) + "\n\n"
-        else:
-            narrative += "No defects have been confirmed for this batch by human reviewers.\n\n"
-
-        if actions:
-            narrative += f"**Linked Corrective Actions ({len(actions)} total, {overdue_count} overdue)**:\n" + "\n".join([f"- {a}" for a in action_codes]) + "\n\n"
-        else:
-            narrative += "No corrective actions are currently open for this batch.\n\n"
-
-        narrative += (
-            f"> **Quality Recommendation**: With batch status currently set to `{batch.status}` "
-            f"and {unreviewed_ai_defects} unreviewed AI prediction(s), complete all pending human reviews "
-            f"before submitting a formal batch hold/release decision."
-        )
-
-        return CopilotResponse(
-            query=query_str,
-            answer=narrative,
-            citations=citations,
-            grounded_stats=stats,
-            provider="grounded_deterministic_synthesizer"
-        )
-
-    def _handle_overdue_actions(self, query_str: str, db: Session) -> CopilotResponse:
-        now = datetime.utcnow()
-        overdue_actions = (
-            db.query(CorrectiveAction)
-            .filter(
-                CorrectiveAction.status.in_(["PENDING", "IN_PROGRESS"]),
-                CorrectiveAction.target_date < now
-            )
-            .all()
-        )
-
-        citations = []
-        for act in overdue_actions:
-            citations.append(CopilotCitation(record_type="ACTION", record_id=act.action_code, label=f"{act.action_code}: {act.title}"))
-
-        if not overdue_actions:
-            return CopilotResponse(
-                query=query_str,
-                answer=(
-                    "### Overdue Corrective Actions Audit\n\n"
-                    "Good news! **Zero (0) corrective actions are currently overdue** in the system. "
-                    "All remediation tasks are either within their designated SLA target dates or already completed."
-                ),
-                citations=[],
-                grounded_stats={"overdue_count": 0},
-                provider="grounded_deterministic_synthesizer"
-            )
-
-        items_md = []
-        for act in overdue_actions:
-            days_late = (now - act.target_date).days
-            owner_name = act.assigned_to.full_name if act.assigned_to else "Unassigned"
-            items_md.append(
-                f"- `[{act.action_code}]` **{act.title}**\n"
-                f"  - Linked Defect: `[{act.defect.defect_code}]` ({act.defect.defect_category})\n"
-                f"  - Owner: **{owner_name}** | Target Date: {act.target_date.strftime('%Y-%m-%d')} (**{days_late} days overdue**)\n"
-                f"  - Status: `{act.status}`"
-            )
-
-        narrative = (
-            f"### Overdue Corrective Actions Audit ({len(overdue_actions)} Total)\n\n"
-            f"The following {len(overdue_actions)} corrective action(s) have passed their committed resolution target dates:\n\n"
-            + "\n".join(items_md) + "\n\n"
-            f"> **Urgent Action**: Production supervisors must follow up with assigned action owners to resolve or request SLA extensions."
-        )
-
-        return CopilotResponse(
-            query=query_str,
-            answer=narrative,
-            citations=citations,
-            grounded_stats={"overdue_count": len(overdue_actions)},
-            provider="grounded_deterministic_synthesizer"
-        )
-
-    def _handle_similar_defects(self, query_str: str, db: Session) -> CopilotResponse:
-        defects = db.query(ConfirmedDefect).order_by(ConfirmedDefect.created_at.desc()).limit(8).all()
-        citations = []
-        for d in defects:
-            citations.append(CopilotCitation(record_type="DEFECT", record_id=d.defect_code, label=f"{d.defect_code}: {d.defect_category} ({d.severity})"))
-
-        if not defects:
-            return CopilotResponse(
-                query=query_str,
-                answer="No confirmed defect history exists in the database to compare against.",
-                citations=[],
-                grounded_stats={"historical_defects": 0},
-                provider="grounded_deterministic_synthesizer"
-            )
-
-        # Categorize
-        cat_counts = {}
-        for d in defects:
-            cat_counts[d.defect_category] = cat_counts.get(d.defect_category, 0) + 1
-
-        top_cat = max(cat_counts.items(), key=lambda x: x[1])
-
-        narrative = (
-            f"### Historical Defect Similarity & Recurrence Analysis\n\n"
-            f"Cross-batch analysis of the last {len(defects)} confirmed defects shows **{top_cat[0]}** is the most frequent defect pattern ({top_cat[1]} occurrences):\n\n"
-        )
-        for d in defects:
-            narrative += (
-                f"- `[{d.defect_code}]` (Batch `[{d.batch.batch_number}]`): **{d.defect_category}** — Severity: **{d.severity}**\n"
-                f"  - Notes: {d.description} | Status: `{d.review_status}`\n"
-            )
-
-        narrative += (
-            f"\n> **Pattern Insight**: Crazing microcracks and surface inclusions are recurring in hot-rolled steel strip batches. "
-            f"Ensure mould degassing temperatures and sand moisture levels are verified."
-        )
-
-        return CopilotResponse(
-            query=query_str,
-            answer=narrative,
-            citations=citations,
-            grounded_stats={"analyzed_count": len(defects), "category_distribution": cat_counts},
-            provider="grounded_deterministic_synthesizer"
-        )
-
-    def _handle_triage_attention(self, query_str: str, db: Session) -> CopilotResponse:
-        pending_reviews = db.query(Inspection).filter(Inspection.status.in_(["INFERENCE_COMPLETED", "UNDER_REVIEW"])).count()
-        overdue_actions = (
-            db.query(CorrectiveAction)
-            .filter(CorrectiveAction.status.in_(["PENDING", "IN_PROGRESS"]), CorrectiveAction.target_date < datetime.utcnow())
-            .count()
-        )
-        batches_on_hold = db.query(Batch).filter(Batch.status == "ON_HOLD").count()
-
-        narrative = (
-            "### Plant Quality Attention Dashboard — Today's Priorities\n\n"
-            f"1. **Inspection Review Queue**: **{pending_reviews}** item(s) have completed ML inference and require human review.\n"
-            f"2. **Overdue CAPA Items**: **{overdue_actions}** corrective action(s) require escalation.\n"
-            f"3. **Batches On Hold**: **{batches_on_hold}** batch(es) are currently held pending quality decisions.\n\n"
-            "Use the **Evidence-Driven Review Prioritization** screen to review high-uncertainty and critical defect items first."
-        )
-
-        return CopilotResponse(
-            query=query_str,
-            answer=narrative,
-            citations=[],
-            grounded_stats={
-                "pending_reviews": pending_reviews,
-                "overdue_actions": overdue_actions,
-                "batches_on_hold": batches_on_hold
-            },
-            provider="grounded_deterministic_synthesizer"
-        )
-
-    def _handle_draft_report(self, query_str: str, db: Session) -> CopilotResponse:
-        total_items = db.query(func.count(func.distinct(Inspection.item_identifier))).scalar() or 0
-        total_defects = db.query(func.count(ConfirmedDefect.id)).scalar() or 0
-        total_actions = db.query(func.count(CorrectiveAction.id)).scalar() or 0
-        completed_actions = db.query(func.count(CorrectiveAction.id)).filter(CorrectiveAction.status == "COMPLETED").scalar() or 0
-        batches = db.query(Batch).all()
-
-        rate = (total_defects / total_items * 100) if total_items > 0 else 0.0
-
-        citations = []
-        for b in batches[:5]:
-            citations.append(CopilotCitation(record_type="BATCH", record_id=b.batch_number, label=f"Batch {b.batch_number}"))
-
-        narrative = (
-            "### Executive Quality Inspection & Defect Remediation Report\n\n"
-            f"**Audit Period**: Current Production Cycle ({datetime.utcnow().strftime('%B %Y')})\n\n"
-            "#### 1. Key Performance Indicators\n"
-            f"- **Total Components Inspected**: {total_items} distinct units\n"
-            f"- **Confirmed Defective Components**: {total_defects} units\n"
-            f"- **Overall Plant Defect Rate**: **{rate:.2f}%**\n"
-            f"- **Corrective Actions Remediated**: {completed_actions} of {total_actions} ({((completed_actions/total_actions*100) if total_actions > 0 else 100):.1f}% resolution rate)\n\n"
-            "#### 2. Batch Dispositions Summary\n"
-        )
-        for b in batches:
-            narrative += f"- `[{b.batch_number}]` ({b.product.name}): Status **{b.status}**\n"
-
-        narrative += (
-            "\n#### 3. Continuous Improvement Directive\n"
-            "All batches with recurring blowhole or crack defects remain under active CAPA monitoring. "
-            "Reinspections must be logged following tooling rework."
-        )
-
-        return CopilotResponse(
-            query=query_str,
-            answer=narrative,
-            citations=citations,
-            grounded_stats={
-                "total_items": total_items,
-                "total_defects": total_defects,
-                "overall_defect_rate": round(rate, 2),
-                "total_actions": total_actions,
-                "completed_actions": completed_actions
-            },
-            provider="grounded_deterministic_synthesizer"
-        )
-
-    def _handle_general_status(self, query_str: str, db: Session) -> CopilotResponse:
-        total_items = db.query(func.count(func.distinct(Inspection.item_identifier))).scalar() or 0
-        pending = db.query(Inspection).filter(Inspection.status.in_(["INFERENCE_COMPLETED", "UNDER_REVIEW"])).count()
-        defects = db.query(ConfirmedDefect).count()
-
-        answer = (
-            "### ForgeSight AI Grounded Quality Copilot\n\n"
-            f"I have direct access to your plant's inspection, defect, and CAPA database. "
-            f"Currently tracking **{total_items}** inspected items, **{pending}** pending reviews, and **{defects}** confirmed defects.\n\n"
-            "**Supported Questions**:\n"
-            "- *'Summarize batch B-2026-104'*\n"
-            "- *'Which corrective actions are overdue?'*\n"
-            "- *'Have we previously recorded a similar defect?'*\n"
-            "- *'What needs attention today?'*\n"
-            "- *'Draft a quality report for the selected period'*"
-        )
         return CopilotResponse(
             query=query_str,
             answer=answer,
-            citations=[],
-            grounded_stats={"total_items": total_items, "pending_reviews": pending, "confirmed_defects": defects},
-            provider="grounded_deterministic_synthesizer"
+            citations=citations,
+            grounded_stats=stats,
+            provider=provider_label,
+            authorized=True
         )
+
+    def _synthesize_grounded_response(
+        self,
+        query_lower: str,
+        query_str: str,
+        retrieved: Dict[str, Any],
+        db: Session
+    ) -> str:
+        batch_num = retrieved.get("target_batch_number")
+
+        # CLASS 1: "Why is a particular batch on hold?"
+        if ("why" in query_lower and ("hold" in query_lower or "status" in query_lower)) or \
+           ("on hold" in query_lower and batch_num):
+            return self._synthesize_batch_hold_reason(batch_num, retrieved, db)
+
+        # CLASS 2: "Summarize the defects in a batch."
+        if ("summarize" in query_lower and "defect" in query_lower) or \
+           ("defects in" in query_lower and batch_num) or \
+           ("batch" in query_lower and "summary" in query_lower and batch_num):
+            return self._synthesize_batch_defects_summary(batch_num, retrieved, db)
+
+        # CLASS 3: "Which corrective actions are overdue?"
+        if "overdue" in query_lower or ("corrective" in query_lower and "late" in query_lower):
+            return self._synthesize_overdue_actions(retrieved, db)
+
+        # CLASS 4: "What do our quality procedures say about this defect?"
+        if "procedure" in query_lower or "sop" in query_lower or "say about" in query_lower or "standard" in query_lower:
+            return self._synthesize_procedure_guidance(query_str, retrieved)
+
+        # CLASS 5: "Draft a corrective-action plan."
+        if "draft" in query_lower or "corrective-action plan" in query_lower or "capa plan" in query_lower:
+            return self._synthesize_draft_capa_plan(batch_num, retrieved, db)
+
+        # CLASS 6: "Generate a quality inspection summary."
+        if "inspection summary" in query_lower or "quality summary" in query_lower or "summary" in query_lower:
+            return self._synthesize_quality_inspection_summary(batch_num, retrieved, db)
+
+        return self._synthesize_general_grounded_answer(retrieved)
+
+    def _synthesize_batch_hold_reason(self, batch_num: Optional[str], retrieved: Dict[str, Any], db: Session) -> str:
+        if not batch_num:
+            return (
+                "**Batch Hold Analysis**: Please specify a valid batch number (e.g., `Why is batch B-2026-104 on hold?`).\n\n"
+                "You can also select from currently held batches in the Products & Batches register."
+            )
+
+        batch = db.query(Batch).filter(Batch.batch_number == batch_num).first()
+        if not batch:
+            return f"**Batch Record Missing**: Batch `{batch_num}` was not found in the database."
+
+        lines = [
+            f"### Quality Hold Investigation: Batch `{batch.batch_number}` [{batch.product.name}]",
+            f"- **Current Disposition**: `{batch.status}`",
+            f"- **Product Code**: `{batch.product.code}` | **Grade**: Hot/Cold Rolled Steel",
+            f"- **Batch Size**: {batch.quantity:,} units | **Production Date**: {batch.production_date.strftime('%Y-%m-%d')}",
+            ""
+        ]
+
+        if batch.status != "ON_HOLD":
+            lines.append(f"**Notice**: Batch `{batch.batch_number}` is currently marked as **`{batch.status}`**, not `ON_HOLD`.")
+            if batch.decision_notes:
+                lines.append(f"- **Latest Decision Notes**: \'{batch.decision_notes}\'")
+            return "\n".join(lines)
+
+        lines.append("#### 1. Hold Trigger & Audit History")
+        if batch.decision_notes:
+            lines.append(f"- **Official Quarantine Note**: \'{batch.decision_notes}\'")
+        
+        decisions = db.query(BatchDecision).filter(BatchDecision.batch_id == batch.id).order_by(BatchDecision.created_at.desc()).all()
+        if decisions:
+            for d in decisions[:2]:
+                decider = db.query(User).filter(User.id == d.decided_by_user_id).first()
+                dec_name = decider.full_name if decider else f"User #{d.decided_by_user_id}"
+                dec_role = decider.role if decider else ""
+                lines.append(f"- **Audit Event**: Status changed to `{d.new_status}` by **{dec_name}** ({dec_role}) on {d.created_at.strftime('%Y-%m-%d %H:%M')}: *\'{d.reason}\'*")
+        else:
+            lines.append("- *No formal electronic batch decision entry recorded.*")
+
+        lines.append("")
+        lines.append("#### 2. Confirmed Defect Evidence")
+        confirmed_defects = db.query(ConfirmedDefect).filter(ConfirmedDefect.batch_id == batch.id).all()
+        if confirmed_defects:
+            for cd in confirmed_defects:
+                lines.append(
+                    f"- **[DEFECT: {cd.defect_code}]** — **{cd.defect_category}** ({cd.severity} Severity) | Status: `{cd.review_status}`\n"
+                    f"  *Description*: \'{cd.description}\'"
+                )
+        else:
+            lines.append("- *No human-confirmed defects currently linked to this batch.*")
+
+        lines.append("")
+        lines.append("#### 3. Automated Inspection Findings")
+        inspections = db.query(Inspection).filter(Inspection.batch_id == batch.id).all()
+        has_cnn = False
+        for insp in inspections:
+            for inf in insp.inference_attempts:
+                has_cnn = True
+                pred_name = inf.defect_display_name or inf.defect_type
+                lines.append(
+                    f"- **[CNN Model Prediction - Not Human Confirmed]**: Item `{insp.item_identifier}` detected **{pred_name}** "
+                    f"with {inf.confidence_score*100:.1f}% confidence."
+                )
+        if not has_cnn:
+            lines.append("- *No automated CNN inspection scans logged for this batch.*")
+
+        lines.append("")
+        lines.append("#### 4. Blocking Corrective Actions (CAPA)")
+        actions = db.query(CorrectiveAction).join(ConfirmedDefect).filter(ConfirmedDefect.batch_id == batch.id).all()
+        open_actions = [a for a in actions if a.status in ["PENDING", "IN_PROGRESS"]]
+        if open_actions:
+            for a in open_actions:
+                lines.append(f"- **[CAPA: {a.action_code}]**: \'{a.title}\' | Status: `{a.status}` | Target Date: {a.target_date.strftime('%Y-%m-%d')}")
+        else:
+            lines.append("- *No open corrective actions blocking release.*")
+
+        lines.append("")
+        lines.append("#### 5. Recommended Next Steps for Quality Manager")
+        lines.append("1. Review root causes and verify completion of open CAPA items.")
+        lines.append("2. Perform Before/After Reinspection on rectified steel surface areas.")
+        lines.append("3. Only an authorized **Quality Manager** may release this batch after physical verification.")
+
+        return "\n".join(lines)
+
+    def _synthesize_batch_defects_summary(self, batch_num: Optional[str], retrieved: Dict[str, Any], db: Session) -> str:
+        if not batch_num:
+            return "**Batch Defect Summary**: Please indicate a target batch identifier (e.g. `Summarize the defects in batch B-2026-104`)."
+
+        batch = db.query(Batch).filter(Batch.batch_number == batch_num).first()
+        if not batch:
+            return f"**Batch Not Found**: No database record exists for batch `{batch_num}`."
+
+        confirmed = db.query(ConfirmedDefect).filter(ConfirmedDefect.batch_id == batch.id).all()
+        inspections = db.query(Inspection).filter(Inspection.batch_id == batch.id).all()
+
+        lines = [
+            f"### Defect Summary: Batch `{batch.batch_number}` [{batch.product.name}]",
+            f"- **Batch Status**: `{batch.status}` | **Inspections Performed**: {len(inspections)}",
+            f"- **Human-Confirmed Defects**: {len(confirmed)}",
+            ""
+        ]
+
+        critical = [d for d in confirmed if d.severity == "CRITICAL"]
+        major = [d for d in confirmed if d.severity == "MAJOR"]
+        minor = [d for d in confirmed if d.severity == "MINOR"]
+
+        lines.append("#### Confirmed Defects (Human Verified)")
+        if confirmed:
+            lines.append(f"- **Breakdown**: Critical: **{len(critical)}** | Major: **{len(major)}** | Minor: **{len(minor)}**")
+            lines.append("")
+            for cd in confirmed:
+                badge = "CRITICAL" if cd.severity == "CRITICAL" else ("MAJOR" if cd.severity == "MAJOR" else "MINOR")
+                lines.append(f"- **[DEFECT: {cd.defect_code}]** ({badge}) — **{cd.defect_category}**")
+                lines.append(f"  *Description*: \'{cd.description}\' | Review Status: `{cd.review_status}`")
+        else:
+            lines.append("- *Zero human-confirmed defects recorded for this batch.*")
+
+        lines.append("")
+        lines.append("#### Automated AI Detections [CNN Model Predictions - Not Human Confirmed]")
+        ai_preds = []
+        for insp in inspections:
+            for inf in insp.inference_attempts:
+                ai_preds.append((insp.item_identifier, inf.defect_display_name or inf.defect_type, inf.confidence_score))
+
+        if ai_preds:
+            for item_id, defect_name, conf in ai_preds[:5]:
+                lines.append(f"- **Item `{item_id}`**: Predicted **{defect_name}** ({conf*100:.1f}% confidence) — *Pending human verification*")
+            if len(ai_preds) > 5:
+                lines.append(f"- *... and {len(ai_preds)-5} additional automated scan records.*")
+        else:
+            lines.append("- *No unconfirmed automated model predictions found.*")
+
+        return "\n".join(lines)
+
+    def _synthesize_overdue_actions(self, retrieved: Dict[str, Any], db: Session) -> str:
+        now = datetime.utcnow()
+        overdue_actions = db.query(CorrectiveAction).filter(
+            CorrectiveAction.status.in_(["PENDING", "IN_PROGRESS"]),
+            CorrectiveAction.target_date < now
+        ).all()
+
+        lines = [
+            "### Overdue Corrective & Preventive Actions (CAPA)",
+            f"- **Total Overdue Items**: **{len(overdue_actions)}**",
+            f"- **Report Timestamp**: {now.strftime('%Y-%m-%d %H:%M UTC')}",
+            ""
+        ]
+
+        if not overdue_actions:
+            lines.append("All corrective actions are currently on-schedule! No open CAPAs have exceeded their target completion date.")
+            return "\n".join(lines)
+
+        lines.append("| CAPA Code | Title | Batch | Defect | Assignee | Due Date | Overdue By |")
+        lines.append("| :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
+
+        for act in overdue_actions:
+            assignee = db.query(User).filter(User.id == act.assigned_to_user_id).first()
+            assignee_name = assignee.full_name if assignee else f"User #{act.assigned_to_user_id}"
+            defect = db.query(ConfirmedDefect).filter(ConfirmedDefect.id == act.defect_id).first()
+            batch_str = defect.batch.batch_number if defect and defect.batch else "General"
+            defect_str = defect.defect_category if defect else "Unspecified"
+            overdue_days = (now - act.target_date).days
+
+            lines.append(
+                f"| **[CAPA: {act.action_code}]** | {act.title} | `{batch_str}` | {defect_str} | {assignee_name} | {act.target_date.strftime('%Y-%m-%d')} | **{overdue_days} days** |"
+            )
+
+        return "\n".join(lines)
+
+    def _synthesize_procedure_guidance(self, query_str: str, retrieved: Dict[str, Any]) -> str:
+        proc_excerpts = retrieved.get("procedural_excerpts", [])
+        if not proc_excerpts:
+            return (
+                "**Standard Operating Procedures**: No specific SOP matched your query keywords.\n\n"
+                "Available Quality Procedures in ForgeSight:\n"
+                "- `DOC-SOP-001`: Surface Crazing Defect Procedure\n"
+                "- `DOC-SOP-002`: Slag & Non-Metallic Inclusion Procedure\n"
+                "- `DOC-SOP-003`: Surface Patches & Cold Scabs Procedure\n"
+                "- `DOC-SOP-004`: Acid Pitting & Chemical Cavity Procedure\n"
+                "- `DOC-SOP-005`: Rolled-In Scale & Mill Scale Procedure\n"
+                "- `DOC-SOP-006`: Surface Scratches & Mechanical Gouges Procedure\n"
+                "- `DOC-SOP-007`: Steel Batch Hold, Quarantine & Release Authority SOP"
+            )
+
+        lines = [
+            "### Standard Quality Operating Procedure Excerpt",
+            ""
+        ]
+        for excerpt in proc_excerpts:
+            lines.append(excerpt)
+            lines.append("\n---")
+
+        return "\n".join(lines)
+
+    def _synthesize_draft_capa_plan(self, batch_num: Optional[str], retrieved: Dict[str, Any], db: Session) -> str:
+        lines = [
+            "### Corrective & Preventive Action (CAPA) Draft Plan",
+            "> [!IMPORTANT]",
+            "> **DRAFT FOR HUMAN QUALITY MANAGER REVIEW ONLY**: This plan is generated for decision support under ISO 9001 / IATF 16949. It is **not approved** until authorized by the designated Quality Manager.",
+            ""
+        ]
+
+        if batch_num:
+            batch = db.query(Batch).filter(Batch.batch_number == batch_num).first()
+            if batch:
+                lines.append(f"**Target Batch**: `{batch.batch_number}` [{batch.product.name}] | **Current Status**: `{batch.status}`")
+                defects = db.query(ConfirmedDefect).filter(ConfirmedDefect.batch_id == batch.id).all()
+                if defects:
+                    lines.append(f"**Associated Defects**: {', '.join(d.defect_category for d in defects)}")
+                lines.append("")
+
+        lines.extend([
+            "#### 1. Immediate Containment (D3)",
+            "- Quarantine target batch and prevent transfer to downstream finishing/shipping lines.",
+            "- Physically tag affected steel coils/plates with high-visibility red quarantine identifiers.",
+            "- Conduct boundary sweep of consecutive production heats (prior 2 heats and subsequent heat).",
+            "",
+            "#### 2. Root Cause Analysis (D4 - 5-Why Methodology)",
+            "- **Mechanical/Thermal Stress**: Inspect roll alignment, bearing wear, and cooling spray nozzle blockage.",
+            "- **Deoxidation & Chemistry**: Review ladle furnace deoxidation reports and argon shrouding pressure logs.",
+            "- **Mill Hygiene**: Check high-pressure descaling header pressures (target: >= 180 bar).",
+            "",
+            "#### 3. Permanent Corrective Actions (D5)",
+            "- Replace worn work rolls and dress intermediate roll stands.",
+            "- Recalibrate descaling spray nozzles and descale header filters.",
+            "- Re-tune cooling water flow rates to eliminate thermal shock cycling.",
+            "",
+            "#### 4. Verification & Reinspection Criteria (D6)",
+            "- Perform high-resolution surface scan and **Before vs After Image Comparison** on rectified coils.",
+            "- Verify surface roughness (Ra <= 1.6 µm) and zero microcracks via magnetic particle testing.",
+            "- Formal reinspection sign-off required by permitted Quality Inspector.",
+            "",
+            "#### 5. Sign-off & Authorization",
+            "- **Prepared by**: ForgeSight AI Quality Copilot (Draft Assistant)",
+            "- **Reviewer Required**: Assigned Quality Manager",
+            "- **Action Status**: Pending Human Review"
+        ])
+
+        return "\n".join(lines)
+
+    def _synthesize_quality_inspection_summary(self, batch_num: Optional[str], retrieved: Dict[str, Any], db: Session) -> str:
+        now = datetime.utcnow()
+        total_batches = db.query(Batch).count()
+        held_batches = db.query(Batch).filter(Batch.status == "ON_HOLD").count()
+        released_batches = db.query(Batch).filter(Batch.status == "RELEASED").count()
+        total_inspections = db.query(Inspection).count()
+        total_defects = db.query(ConfirmedDefect).count()
+        open_capas = db.query(CorrectiveAction).filter(CorrectiveAction.status.in_(["PENDING", "IN_PROGRESS"])).count()
+        overdue_capas = db.query(CorrectiveAction).filter(
+            CorrectiveAction.status.in_(["PENDING", "IN_PROGRESS"]),
+            CorrectiveAction.target_date < now
+        ).count()
+
+        lines = [
+            "### ForgeSight Quality Inspection & Operations Summary",
+            f"- **Report Date**: {now.strftime('%Y-%m-%d %H:%M UTC')}",
+            f"- **Plant Domain**: Hot-Rolled & Cold-Rolled Steel Flat Products",
+            "",
+            "#### Plant Quality KPI Dashboard",
+            f"- **Total Batches Tracked**: **{total_batches}**",
+            f"- **Batches On Hold**: **{held_batches}** (Quarantine Rate: {held_batches/max(total_batches, 1)*100:.1f}%)",
+            f"- **Batches Released**: **{released_batches}**",
+            f"- **Total Scanned Inspections**: **{total_inspections}**",
+            f"- **Human-Confirmed Defect Log**: **{total_defects}**",
+            f"- **Active Corrective Actions (CAPA)**: **{open_capas}** ({overdue_capas} overdue)",
+            ""
+        ]
+
+        if batch_num:
+            lines.append(f"#### Specific Focus: Batch `{batch_num}`")
+            lines.append(self._synthesize_batch_defects_summary(batch_num, retrieved, db))
+
+        return "\n".join(lines)
+
+    def _synthesize_general_grounded_answer(self, retrieved: Dict[str, Any]) -> str:
+        facts = retrieved.get("confirmed_facts", [])
+        preds = retrieved.get("cnn_predictions", [])
+        proc = retrieved.get("procedural_excerpts", [])
+
+        lines = ["### ForgeSight Grounded Quality Intelligence", ""]
+        if facts:
+            lines.append("#### Verified Application Records:")
+            for f in facts[:5]:
+                lines.append(f"- {f}")
+            lines.append("")
+
+        if preds:
+            lines.append("#### Automated AI Scan Detections [CNN Model Predictions - Not Human Confirmed]:")
+            for p in preds[:5]:
+                lines.append(f"- {p}")
+            lines.append("")
+
+        if proc:
+            lines.append("#### Relevant Standard Operating Procedures:")
+            for p in proc:
+                lines.append(f"{p[:300]}...")
+            lines.append("")
+
+        if not facts and not preds and not proc:
+            lines.append("No specific quality records matched your query terms. Please ask about a specific batch, defect type, or corrective action.")
+
+        return "\n".join(lines)
 
 copilot_engine = QualityCopilotEngine()
